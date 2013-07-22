@@ -430,37 +430,55 @@ seen in the current setup versus how the reference shows it'''
 def perspective_shift(img):
         global display
         display = False
-        contour_boxes = overlap_elimination( find_contours_MSER(img, 5, 100000, True, (100, 2)),100)
-        landmarks = [(float(x[0] + (x[2]/2)), float(x[1] +(x[3]/2))) for x in contour_boxes]
-
-        display = True
-        #tempimg = np.copy(img)
-        #for box in contour_boxes:
-        #        cv2.rectangle(tempimg, (box[0], box[1]), (box[0] + box[2], box[1] + box[3]), (0, 255, 0), 1)
-        #        print box[0] + (box[2] / 2), box[1] + (box[3]/2)
-        #show(tempimg, "LANDMARKS")
 
         ideal_positions = ([(163,51),(301,47),(152,428),(305,433)])
 
-        
+        contour_boxes = overlap_elimination( find_contours_MSER(img, 5, 100000, True, (100, 2)),100)
+        landmarks = [(float(x[0] + (x[2]/2)), float(x[1] +(x[3]/2))) for x in contour_boxes]
         landmarks = sorted(landmarks, key=lambda x: x[0] + (x[1] / 2))
         
-        if (len(landmarks)== 4):
-                # assuming camera is mounted to the right and angled in
-                src =np.array(landmarks, np.float32)# np.array([(0.0,100.0),(IMG_SIZE,-100.0),(IMG_SIZE,IMG_SIZE+ 100.0),(0.0,IMG_SIZE-100)], np.float32)
-                print(src)
-                dst = np.array(ideal_positions, np.float32 )#np.array([(0.0,0.0),(IMG_SIZE,0.0),(IMG_SIZE,IMG_SIZE),(0.0,IMG_SIZE)], np.float32)
-                print(dst)
-                perspective_xform = cv2.getPerspectiveTransform(src,dst)
-                img = cv2.warpPerspective(img, perspective_xform, (IMG_SIZE,IMG_SIZE))
-                #show(img, "shifted")
-                cv2.imshow("cam", img)
+        MAX_TRIES = 10
+        tries = 0
 
         
-                return (img, perspective_xform)
+        shifted_img = None
+        while (len(landmarks) != 4 or not good_transform(shifted_img, ideal)) and (tries < MAX_TRIES):
+                # TODO: Adjust the parameters to the find_contours_MSER to try to get 4 landmarks
+                if len(landmarks) > 4:
+
+                elif len(landmarks) < 4:
+
+
+                contour_boxes = overlap_elimination( find_contours_MSER(img, 5, 100000, True, (100, 2)),100)
+                landmarks = [(float(x[0] + (x[2]/2)), float(x[1] +(x[3]/2))) for x in contour_boxes]
+                
+                if len(landmarks) == 4):
+                        landmarks = sorted(landmarks, key=lambda x: x[0] + (x[1] / 2))
+                        src =np.array(landmarks, np.float32)
+                        print(src)
+                        dst = np.array(ideal_positions, np.float32 )
+                        print(dst)
+                        perspective_xform = cv2.getPerspectiveTransform(src,dst)
+                        shifted_img = cv2.warpPerspective(img, perspective_xform, (IMG_SIZE,IMG_SIZE))
+                        cv2.imshow("cam", img)
+                
+                tries += 1
+                
+
+        if (tries == MAX_TRIES):
+                return img, None
         else:
-                cv2.imshow("cam", img)
-                return None, None
+                return (shifted_img, perspective_xform)
+
+
+def good_transform (img, goal):
+        # TODO: determine exactly how to measure a good transform -
+        # obviously it will have the 4 contours in the right
+        # positions; some way to test if it has no other contours
+        # inside that box perhaps?
+        contour_boxes = overlap_elimination( find_contours_MSER(img, 5, 100000, True, (100, 2)),100)
+        return len(contour_boxes) == 4
+        
 
 ''' creates the detector and trains it on features of the img '''
 def create_detector(img):
@@ -575,16 +593,18 @@ def define_buttons():
 	return buttoncoords
 
 
-def get_calib_image():
+def calibrate_camera(cam):
         import time
         
-        video_src = 0
-        #cam = video.create_capture(video_src)
-        cam = cv2.VideoCapture(0)
-        cam.open(0)
         ret, frame = cam.read()
         cv2.namedWindow('cam')
+
+        perspective_xform = None
         
+        print "Calibrating Camera: Press \"w\" when the camera is in
+        position and the calibration card is placed directly under the
+        robot"
+
         while True:
                 err, vis = cam.read()
                 #cv2.imshow('cam', vis)
@@ -594,61 +614,63 @@ def get_calib_image():
                         break
                 if ch == ord('c'):
                         cv.SaveImage("calib.jpg", cv.fromarray(vis))
-                if ch == ord('q'):
+                if ch == ord('w'):
                         
                         image = cv2.resize(vis, (IMG_SIZE, IMG_SIZE), fx=0.0, fy=0.0, interpolation=cv2.INTER_AREA)
                         
                         #detector = create_detector(image)
-
-                        # comment this in if your camera is not directly overhead, and tweak the src parameters
-                        # the ones in there now are for about a 45-degree angle off to the right
+                        print "Calibrating..."
                         image, perpsective_xform = perspective_shift(image)
 
-                        ch = cv2.waitKey(500)
-                        if ch == ord('x'):
-                                
+                        if (perspective_xform != None):
+                                print "Calibration Successful"
+                                break;
+                        else:
+                                print "Calibration Failed."
+                                print "Try repositioning the camera or card"
+
                 
-                    
+        return perspective_xform
 
-
+def setup_camera():
+        video_src = 0
+        cam = cv2.VideoCapture(0)
+        cam.open(0)
+        return cam
 
 def main(args):
         global display, image
         display = True
 
-        get_calib_image()
-        return 0
+        cam = setup_camera()
 
-        if (len(args) < 2):
-                img_name = "calib.jpg"
-                find_chars = True
-        else:
-                img_name = args[1]
-                if (len(args)>2 and args[2] == 'b'):
-                    find_chars = False
-                else:
-                    find_chars = False
-         
-        image = cv2.resize(cv2.imread(img_name), (IMG_SIZE, IMG_SIZE), fx=0.0, fy=0.0, interpolation=cv2.INTER_AREA)
+        perspective_xform = calibrate_camera(cam) 
+        if perspective_xform == None:
+                print "Calibration Failed. Exiting"
+                return 
 
+        print "Now place device to PIN crack as close to the middle of
+        the calibration card as possible"
+        print "Press \"w\" when this is completed"
+
+        ch = cv2.waitkey(20000)
+        if ch != ord('w'):
+                print "Timeout. Exiting"
+                return
+        
+        image = cv2.resize(cam.read()[1], (IMG_SIZE, IMG_SIZE),
+        fx=0.0, fy=0.0, interpolation=cv2.INTER_AREA)
+        image = cv2.warpPerspective(image, perspective_xform, (IMG_SIZE,IMG_SIZE))
+        (image, rotation_angle, shear_angle) = derotate_and_deshear(image)
         detector = create_detector(image)
+        
+        show(image, "fixed image")
 
-        # comment this in if your camera is not directly overhead, and tweak the src parameters
-        # the ones in there now are for about a 45-degree angle off to the right
-        image, perpsective_xform = perspective_shift(image)
-
-        image2 =cv2.resize(cv2.imread("calib.jpg"), (IMG_SIZE,IMG_SIZE), fx=0.0, fy=0.0, interpolation=cv2.INTER_AREA)
-
-        CHANGE_THRESHOLD = 100
-        detect_change(image2, detector, CHANGE_THRESHOLD)
-        return 0
-
-
-        # run until ESCAPE is pressed
-        #while True:
-        #        pick_buttons()
-        #        if cv2.waitKey(10)== 27:
-        #                break
+        run until ESCAPE is pressed
+        while True:
+                pick_buttons()
+                if cv2.waitKey(10)== 27:
+                        break
 
         buttons=define_buttons()
         pprint.pprint(buttons)
