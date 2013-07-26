@@ -19,6 +19,11 @@ TRUELIST = ("1","True","true","TRUE","t","T", "yes", "Yes", "YES")
 
 button_list= list()
 image = None
+cam = None
+rotation_angle = None
+shear_angle = None
+perspective_xform = None
+sideways = True
 
 display = True
 '''
@@ -142,7 +147,8 @@ def too_close((x1, y1, w1, h1), (x2, y2, w2, h2), margin):
 
 # find contours using the MSER function
 def find_contours_MSER(img, minsize, maxsize, find_characters, margins):
-
+        global display
+        display = False
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
 
 #
@@ -164,7 +170,7 @@ def find_contours_MSER(img, minsize, maxsize, find_characters, margins):
 
         contours = mser.detect(gray, None)
         buttons, stats = process_contours(contours, minsize, maxsize, img, "gray -> MSER", find_characters, margins)
-
+        display = True
         return buttons
 
 # find contours using the findContours function
@@ -319,18 +325,22 @@ def derotate_and_deshear(img):
 #   contours, hierarchy = cv2.find_contours(sub, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
         canny = cv2.Canny(gray, 110, 100)
 
+        show(img,"lines")
+        show(get_frame(), "lines")
         MIN_LINE_LENGTH = 30
         lines = cv2.HoughLinesP(canny, 1, np.pi / 180, 80, 0, MIN_LINE_LENGTH, 30)[0]
 
-#     for line in lines:
-#       cv2.line(img, (int(line[0]), int(line[1])), (int(line[2]), int(line[3])), cv2.cv.CV_RGB(0, 255, 0), 4)
+        for line in lines:
+             cv2.line(img, (int(line[0]), int(line[1])), (int(line[2]), int(line[3])), cv2.cv.CV_RGB(0, 255, 0), 4)
         (primary_angle, primary_line) = get_primary_axis_angle(lines)
         if (primary_angle > 0):
                 rotation_angle = 90 - primary_angle
         else:
                 rotation_angle = -(90 + primary_angle)
         
-#   cv2.line(img, (int(primary_line[0]), int(primary_line[1])), (int(primary_line[2]), int(primary_line[3])), cv2.cv.CV_RGB(255,0,255), 4)
+        cv2.line(img, (int(primary_line[0]), int(primary_line[1])), (int(primary_line[2]), int(primary_line[3])), cv2.cv.CV_RGB(255,0,255), 4)
+
+        show(img, "lines")
 
         rotation_matrix = cv2.getRotationMatrix2D((len(img[0]) / 2, len(img) / 2), rotation_angle, 1)
         img = cv2.warpAffine(img, rotation_matrix, (IMG_SIZE, IMG_SIZE), img, cv2.INTER_LINEAR, cv2.BORDER_TRANSPARENT)
@@ -429,7 +439,7 @@ a card) and then get a perspective shift based on how that card is
 seen in the current setup versus how the reference shows it'''
 def perspective_shift(img):
         global display
-        display = False
+
 
         ideal_positions = ([(163,51),(301,47),(152,428),(305,433)])
 
@@ -439,20 +449,21 @@ def perspective_shift(img):
         
         MAX_TRIES = 10
         tries = 0
-
-        
-        shifted_img = None
-        while (len(landmarks) != 4 or not good_transform(shifted_img, ideal)) and (tries < MAX_TRIES):
+        perspective_xform = None
+        shifted_img = img
+        while True:
                 # TODO: Adjust the parameters to the find_contours_MSER to try to get 4 landmarks
-                if len(landmarks) > 4:
+#                if len(landmarks) > 4:
+ #                       break
 
-                elif len(landmarks) < 4:
-
+  #              elif len(landmarks) < 4:
+   #                     break
 
                 contour_boxes = overlap_elimination( find_contours_MSER(img, 5, 100000, True, (100, 2)),100)
                 landmarks = [(float(x[0] + (x[2]/2)), float(x[1] +(x[3]/2))) for x in contour_boxes]
-                
-                if len(landmarks) == 4):
+
+
+                if len(landmarks) == 4:
                         landmarks = sorted(landmarks, key=lambda x: x[0] + (x[1] / 2))
                         src =np.array(landmarks, np.float32)
                         print(src)
@@ -461,10 +472,14 @@ def perspective_shift(img):
                         perspective_xform = cv2.getPerspectiveTransform(src,dst)
                         shifted_img = cv2.warpPerspective(img, perspective_xform, (IMG_SIZE,IMG_SIZE))
                         cv2.imshow("cam", img)
+                else:
+                        cv2.imshow("cam", img)
                 
                 tries += 1
-                
-
+                if (len(landmarks) == 4 and good_transform(shifted_img, ideal_positions)) or (tries >= MAX_TRIES):
+                        break
+        
+        print tries
         if (tries == MAX_TRIES):
                 return img, None
         else:
@@ -476,6 +491,7 @@ def good_transform (img, goal):
         # obviously it will have the 4 contours in the right
         # positions; some way to test if it has no other contours
         # inside that box perhaps?
+        return True
         contour_boxes = overlap_elimination( find_contours_MSER(img, 5, 100000, True, (100, 2)),100)
         return len(contour_boxes) == 4
         
@@ -594,20 +610,18 @@ def define_buttons():
 
 
 def calibrate_camera(cam):
-        import time
-        
-        ret, frame = cam.read()
+        global sideways
+        cam.read()
         cv2.namedWindow('cam')
 
         perspective_xform = None
         
-        print "Calibrating Camera: Press \"w\" when the camera is in
-        position and the calibration card is placed directly under the
-        robot"
+        print "Calibrating Camera: Press \"w\" when the camera is in position and the calibration card is placed directly under the robot"
 
         while True:
-                err, vis = cam.read()
-                #cv2.imshow('cam', vis)
+                vis = get_frame()
+                
+                cv2.imshow('cam', vis)
                 ch = 0xFF & cv2.waitKey(5)
                 if ch == 27:
                         cv2.destroyAllWindows()
@@ -620,7 +634,7 @@ def calibrate_camera(cam):
                         
                         #detector = create_detector(image)
                         print "Calibrating..."
-                        image, perpsective_xform = perspective_shift(image)
+                        image, perspective_xform = perspective_shift(image)
 
                         if (perspective_xform != None):
                                 print "Calibration Successful"
@@ -629,19 +643,56 @@ def calibrate_camera(cam):
                                 print "Calibration Failed."
                                 print "Try repositioning the camera or card"
 
-                
+        show(image, "shifted")
         return perspective_xform
 
 def setup_camera():
+        global cam
         video_src = 0
         cam = cv2.VideoCapture(0)
         cam.open(0)
         return cam
 
+def get_frame():
+        global perspective_xform, rotation_angle, shear_angle, sideways, cam
+        if (cam == None):
+                setup_camera()
+
+        frame = cv2.resize(cam.read()[1], (IMG_SIZE, IMG_SIZE), fx=0.0, fy=0.0, interpolation=cv2.INTER_AREA)
+
+        if sideways:
+                rotation_matrix = cv2.getRotationMatrix2D((IMG_SIZE/2, IMG_SIZE/2),90, 1)
+                frame = cv2.warpAffine(frame, rotation_matrix, (IMG_SIZE, IMG_SIZE), frame, cv2.INTER_LINEAR, cv2.BORDER_TRANSPARENT)
+                
+        
+        if (perspective_xform != None):
+                frame = cv2.warpPerspective(frame, perspective_xform, (IMG_SIZE,IMG_SIZE))
+        
+        
+        if (rotation_angle != None):
+                rotation_matrix = cv2.getRotationMatrix2D((len(frame[0]) / 2, len(frame) / 2), rotation_angle, 1)
+                frame = cv2.warpAffine(frame, rotation_matrix, (IMG_SIZE, IMG_SIZE), frame, cv2.INTER_LINEAR, cv2.BORDER_TRANSPARENT)
+
+
+        if (shear_angle != None):
+                frame = unshear(frame, shear_angle)
+
+        
+        
+        return frame                        
+
 def main(args):
-        global display, image
+        global display, image, cam, shear_angle, rotation_angle, perspective_xform, sideways
         display = True
 
+        print "Press 's' if the camera is NOT sideways"
+        ch = raw_input()
+        if ch != ord('s'):
+                sideways = True
+        else:
+                sideways = False
+        print sideways
+        
         cam = setup_camera()
 
         perspective_xform = calibrate_camera(cam) 
@@ -649,24 +700,30 @@ def main(args):
                 print "Calibration Failed. Exiting"
                 return 
 
-        print "Now place device to PIN crack as close to the middle of
-        the calibration card as possible"
+        print "Now place device to PIN crack as close to the middle of the calibration card as possible"
         print "Press \"w\" when this is completed"
 
-        ch = cv2.waitkey(20000)
-        if ch != ord('w'):
+        ch =raw_input()
+        if ch != 'w':
                 print "Timeout. Exiting"
+                cv2.destroyAllWindows()
                 return
+
+        cam.read()
+
+        #sideways = True
+        frame = get_frame()
+        (frame, rotation_angle, shear_angle) = derotate_and_deshear(frame)
         
-        image = cv2.resize(cam.read()[1], (IMG_SIZE, IMG_SIZE),
-        fx=0.0, fy=0.0, interpolation=cv2.INTER_AREA)
-        image = cv2.warpPerspective(image, perspective_xform, (IMG_SIZE,IMG_SIZE))
-        (image, rotation_angle, shear_angle) = derotate_and_deshear(image)
+        image = get_frame()
+        
+        show(image, "get_frame")
+        
         detector = create_detector(image)
         
         show(image, "fixed image")
 
-        run until ESCAPE is pressed
+        # run until ESCAPE is pressed
         while True:
                 pick_buttons()
                 if cv2.waitKey(10)== 27:

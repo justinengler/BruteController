@@ -32,7 +32,7 @@ buttonids={}
 counter=0
 
 """If True, the input and output to serial are shown on the console"""
-SERIALTOCONSOLE=True
+SERIALTOCONSOLE=False
 
 def serialsetup():
 	global ser
@@ -356,6 +356,10 @@ def bruteloop(brutelist, maxtries=None, actionlist=()):
 	persister=None
 	brutecontinue=True
 	start =True
+
+
+	import time
+	time_start = time.time()
 	
 	for pin in brutelist:
 		print "===Pushing %s:"%(pin,)
@@ -367,25 +371,24 @@ def bruteloop(brutelist, maxtries=None, actionlist=()):
 			
 			#push(toIdentifier('Z'))
 			tries+=1
-			if (tries == 5):
-				move(0,0,1)
 				
-				
-				break;
+			if (tries % 5 == 0 and False):
+					move(0,0,0)
+					time.sleep(.5)
+					move(cooldown_ok['x'], cooldown_ok['y'], cooldown_ok['z'])
+					move(0,0,0)
+					androidPINwait(0,0,0)
 			
-			if (tries % 5 == 0):
-				move(0,0,0)
-				time.sleep(1)
-				move(cooldown_ok['x'], cooldown_ok['y'], cooldown_ok['z'])
-				move(0,0,0)
-				androidPINwait(0,0,0)
-			
-			for modulo,func in actionlist:
-				if tries % modulo == 0:			
+		cur_time = time.time()
+		if (tries % 10 == 0):
+				print cur_time - time_start
+				time_start = cur_time
+		for modulo,func in actionlist:
+				if tries % modulo == 0:                 
 					returnvalue=func(tries,pin,persister)
 					if returnvalue is not None:
 						brutecontinue, persister = returnvalue
-			if tries>=maxtries or not brutecontinue:
+		if tries>=maxtries or not brutecontinue:
 				break
 				
 	move(0,0,0)
@@ -402,7 +405,7 @@ def brutekeys(pinlength, keys="0123456789", randomorder=False):
 		random.shuffle(allpossible)
 
 
-	allpossible = ("1234", "0000", "2580", "1111", "5555")
+                #allpossible = ("1234", "0000", "2580", "1111", "5555")
 	return allpossible
 
 
@@ -489,7 +492,7 @@ def main():
 	print "\tis to check the Arduino software's menu"
 	print "\tYou will also probably want to make some edits to the main function"
 	serialsetup()
-	writedelay=.2
+	writedelay=.3
 	print "\n\n"
 	print "+="*10+" Configure Robot "+"+="*10
 	print "\n\n"
@@ -511,7 +514,7 @@ def main():
 	print layout
 	#robotconfig(drop=0, lift=lift, buttoncoords=layout)	
 	
-	writedelay=.15
+	writedelay=.01
 		
 	print "*="*5+"test all 4 digit pins, random order"
 	brutes=brutekeys(4, randomorder=False)

@@ -70,17 +70,17 @@ def readuntil(file,target):
 #assumes grid layout, even spacing
 def buttonguesslayout(xof1,yof1):
 	return {
-				'0':{'x':0,	'y':-(2*yof1), 	'z':0},
-				'1':{'x':xof1,'y':yof1, 	'z':0},
-				'2':{'x':0,	'y':yof1, 		'z':0},
-				'3':{'x':-xof1,'y':yof1, 	'z':0},
-				'4':{'x':xof1,'y':0, 		'z':0},
-				'5':{'x':0,	'y':0, 			'z':0},
-				'6':{'x':-xof1,'y':0, 		'z':0},
-				'7':{'x':xof1,'y':-yof1, 	'z':0},
-				'8':{'x':0,	'y':-yof1, 		'z':0},
-				'9':{'x':-xof1,'y':-yof1, 	'z':0},
-				}		
+				'0':{'x':0,     'y':-(2*yof1),  'z':0},
+				'1':{'x':xof1,'y':yof1,         'z':0},
+				'2':{'x':0,     'y':yof1,               'z':0},
+				'3':{'x':-xof1,'y':yof1,        'z':0},
+				'4':{'x':xof1,'y':0,            'z':0},
+				'5':{'x':0,     'y':0,                  'z':0},
+				'6':{'x':-xof1,'y':0,           'z':0},
+				'7':{'x':xof1,'y':-yof1,        'z':0},
+				'8':{'x':0,     'y':-yof1,              'z':0},
+				'9':{'x':-xof1,'y':-yof1,       'z':0},
+				}               
 
 def write(output):
 	"""Send output to the robot"""
@@ -158,7 +158,8 @@ def finddrop(x=0, y=0, z=0, usebutton=False):
 		to Arduino, or the user can press the keyboard until the touch device registers a touch"""
 	x=0
 	y=0
-	z=0	
+	z=4
+
 	stepsize=.1
 	
 	if not usebutton:
@@ -189,10 +190,10 @@ def finddrop(x=0, y=0, z=0, usebutton=False):
 	
 	print "z was: ",z
 	
-	move (x,y,0)
+	move (x,y,4)
 	return z
 		
-def findaxes(x=0, y=0, z=0):
+def findaxes(x=0, y=0, z=4):
 	print "AXIS ALIGNMENT:"
 	print " Keep pressing Enter to sweep the effector in the X and Y directions."
 	print " Type x or y to sweep only that, or type a for all directions"
@@ -213,6 +214,29 @@ def findaxes(x=0, y=0, z=0):
 	stopchar='s'
 	lastmoved='y'
 	move (x,y,z)
+
+        
+	import time
+	while True:
+			curr = raw_input()
+			if stopchar in curr:
+				break
+			else:
+				move(0,2,2)
+				time.sleep(.2)
+				move(0,-2,2)
+
+	while True:
+			curr = raw_input()
+			if stopchar in curr:
+				break
+			else:
+				move(2,0,2)
+				time.sleep(.2)
+				move(-2,0,2)
+
+		
+		
 	while True:
 		move(newx,newy,z)
 		print "X, Y = %s, %s"%(newx,newy)
@@ -223,16 +247,20 @@ def findaxes(x=0, y=0, z=0):
 		else:
 			if "x" in curr:
 				newx=-newx
+				newy =0
 				lastmoved='x'
 			elif "y" in curr:
 				newy=-newy
+				newx=0
 				lastmoved='y'
 			else:
 				if lastmoved=='x':
 					newx=-newx
+					newy = 0
 					lastmoved='x'
 				else:
 					newy=-newy
+					newx = 0
 					lastmoved='y'
 	print "DONE!"
 	move (x,y,0)
@@ -331,7 +359,7 @@ def brutekeys(pinlength, keys="0123456789", randomorder=False):
 
 def bruteloop(brutelist, maxtries=None, actionlist=()):
 	global global_layout
-	cooldown_ok = global_layout['X']
+	cooldown_ok = global_layout[ss]
 	"""Try to push the buttons for each possible PIN in the given list
 		
 		If an actionlist is given, function in second position will be called
@@ -342,7 +370,7 @@ def bruteloop(brutelist, maxtries=None, actionlist=()):
 		Return value should be None, or a tuple of a bool and a persistence value.  
 		Any returned persistence value will be passed into persistdata on the next call.
 		If the bool in the tuple is False, the bruteforcing is stopped.  When bruteloop exits,
-		it returns the persistdata.  This can be used to indicate why the stop occurred.	
+		it returns the persistdata.  This can be used to indicate why the stop occurred.        
 	"""
 	if maxtries is None:
 		maxtries=sys.maxint
@@ -353,28 +381,27 @@ def bruteloop(brutelist, maxtries=None, actionlist=()):
 			
 	for pin in brutelist:
 		print "===Pushing %s:"%(pin,)
-                                        #for number in pin:
-                                        #print "pushing %s"%number
-                                        #push(toIdentifier(number))
-                                enterpin(pin)
-                                
-                                #push(toIdentifier('Z'))
-                                tries+=1
-
-                                if (tries % 5 == 0):
-                                        move(0,0,0)
-                                        time.sleep(1)
-                                        move(cooldown_ok['x'], cooldown_ok['y'], cooldown_ok['z'])
-                                        move(0,0,0)
-                                        androidPINwait(0,0,0)
-                                
-                                for modulo,func in actionlist:
-                                        if tries % modulo == 0:			
-                                                returnvalue=func(tries,pin,persister)
-                                                if returnvalue is not None:
-                                                        brutecontinue, persister = returnvalue
-                                if tries>=maxtries or not brutecontinue:
-                                        break
+					#for number in pin:
+					#print "pushing %s"%number
+					#push(toIdentifier(number))
+		enterpin(pin)
+				
+				#push(toIdentifier('Z'))
+		tries+=1
+		if (tries % 5 == 0):
+			move(0,0,0)
+			time.sleep(1)
+			move(cooldown_ok['x'], cooldown_ok['y'], cooldown_ok['z'])
+			move(0,0,0)
+			androidPINwait(0,0,0)
+				
+		for modulo,func in actionlist:
+			if tries % modulo == 0:                 
+				returnvalue=func(tries,pin,persister)
+				if returnvalue is not None:
+					brutecontinue, persister = returnvalue
+		if tries>=maxtries or not brutecontinue:
+			break
 				
 	move(0,0,0)
 
@@ -477,7 +504,7 @@ def main():
 		layout = global_layout
 	print "Calibrating robot"
 	print layout
-	#robotconfig(drop=0, lift=lift, buttoncoords=layout)	
+	#robotconfig(drop=0, lift=lift, buttoncoords=layout)    
 	
 	writedelay=.3
 		
