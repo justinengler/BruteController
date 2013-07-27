@@ -514,7 +514,7 @@ def main():
 	print layout
 	#robotconfig(drop=0, lift=lift, buttoncoords=layout)	
 	
-	writedelay=.01
+	writedelay=.05
 		
 	print "*="*5+"test all 4 digit pins, random order"
 	brutes=brutekeys(4, randomorder=False)

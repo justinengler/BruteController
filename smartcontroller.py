@@ -42,7 +42,7 @@ IMG_SIZE = 480
 FALSELIST = ("0","False","false","FALSE","f","F","no","No", "NO")
 TRUELIST = ("1","True","true","TRUE","t","T", "yes", "Yes", "YES")
 
-button_list= list()
+button_list = list()
 image = None
 cam = None
 rotation_angle = None
@@ -50,6 +50,9 @@ shear_angle = None
 perspective_xform = None
 orientation = 180
 detector = None
+additional_detectors = list()
+done_cracking = False
+correct_pin = None
 region = None
 increment = 0.1
 display = True
@@ -656,8 +659,8 @@ def create_detector(img):
 
 ''' returns True if the current image has too many feature mismatches
 compared to the image used to train the detector'''
-def detect_change(cur_img, mismatch_threshold):
-	global detector, region
+def detect_change(cur_img, mismatch_threshold, detector_to_use):
+	global region
 	DIST_THRESHOLD = 0.1
 
 	surfDetector = cv2.FeatureDetector_create("SURF")
@@ -666,8 +669,6 @@ def detect_change(cur_img, mismatch_threshold):
 	cur_imgg = cv2.cvtColor(cur_img,cv2.COLOR_BGR2GRAY)
 	if (region != None):
 		cur_imgg = cur_imgg[region[0]:region[2], region[1]:region[3]]
-
-	show(cur_imgg, "change")
 	
 	cur_keypoints = surfDetector.detect(cur_imgg)
 	cur_keypoints, cur_descriptors = surfDescriptorExtractor.compute(cur_imgg,cur_keypoints)
@@ -676,7 +677,7 @@ def detect_change(cur_img, mismatch_threshold):
 	 
 	for h,des in enumerate(cur_descriptors):
 		des = np.asmatrix(des,np.float32)
-		retval, results, neigh_resp, dists = detector.find_nearest(des,1)
+		retval, results, neigh_resp, dists = detector_to_use.find_nearest(des,1)
 		res,dist =  int(results[0][0]),dists[0][0]
 
 		if dist > DIST_THRESHOLD:
@@ -727,7 +728,7 @@ def pick_button(frame, winname, buttondict, buttonname):
 	cv2.imshow("Calibration", frame)
 	ch = cv2.waitKey()
 
-	while ch != ord('c'):
+	while ch != ord('c')and ch != ord('v'):
 		if buttonname in buttondict:
 			if ch == ord('q'):
 				button = buttondict[buttonname]
@@ -773,6 +774,12 @@ def pick_button(frame, winname, buttondict, buttonname):
 			elif ch == ord('p'):
 				print "dumping", buttondict
 				pickle.dump(buttondict, open("buttons.p", 'w'))
+
+			elif ch == ord('b'):
+				ch = cv2.waitKey()
+				if (str(unichr(ch)) in buttondict):
+					button =buttondict[str(unichr(ch))]
+					move(button['x'],button['y'],button['z'])
 				
 			elif str(unichr(ch)) in [str(x) for x in range(10)]:
 				increment = float(str(unichr(ch)))/ 10
@@ -811,13 +818,16 @@ def calibrate_buttons():
 	find_drop()
 	
 	buttons = {}
+
+	print "Press 'o'  to load a preconfigured button layout"
+	ch = cv2.waitKey()
+	if ch == ord('o'):
+		buttons = pickle.load(open("buttons.p", 'r'))
 	
 	print "Is there an \"OK\" button? (y/n)"
 	ch = cv2.waitKey()
 	if ch == ord('y'):
 		pick_button(frame, "Calibration", buttons, "OK")
-	if ch == ord('o'):
-		return pickle.load(open("buttons.p", 'r'))
 	
 	for number in range(0,10):
 		pick_button(frame, "Calibration", buttons, str(number))
@@ -960,6 +970,7 @@ def readuntil(file,target):
 	
 
 def write(output):
+	global writedelay
 	"""Send output to the robot"""
 	if SERIALTOCONSOLE:
 		print "++TOSERIAL:%s"%output
@@ -989,7 +1000,7 @@ def brutekeys(pinlength, keys="0123456789", randomorder=False):
 	return allpossible
 
 def bruteloop(brutelist, buttondict, maxtries=None, actionlist=()):
-	
+	global done_cracking
 	"""Try to push the buttons for each possible PIN in the given list
 		
 		If an actionlist is given, function in second position will be called
@@ -1025,14 +1036,15 @@ def bruteloop(brutelist, buttondict, maxtries=None, actionlist=()):
 			coordinate = buttondict['8']
 			move(coordinate['x'], coordinate['y'], coordinate['z'])
 			move(0,0,0)
-			time.sleep(30)
-				
+			for i in range(30):
+				time.sleep(1)
+							
 		for modulo,func in actionlist:
 			if tries % modulo == 0:                 
 				returnvalue=func(tries,pin,persister)
 				if returnvalue is not None:
 					brutecontinue, persister = returnvalue
-		if tries>=maxtries or not brutecontinue:
+		if tries>=maxtries or not brutecontinue or done_cracking:
 			break
 				
 	move(0,0,0)
@@ -1040,7 +1052,7 @@ def bruteloop(brutelist, buttondict, maxtries=None, actionlist=()):
 
 """ Couldn't get the EP command to work with 5 sets of coordinates - too much in one serial send?"""
 def enterpin(pin, buttondict):
-	global writedelay
+	global writedelay, additional_detectors, done_cracking, correct_pin, detector
 	ok_required = True
 	for number in pin:
 		coordinate = buttondict[str(number)]
@@ -1054,9 +1066,25 @@ def enterpin(pin, buttondict):
 
 	move(0,0,4)
 	time.sleep(.2)
-	if detect_change(get_frame(), 100):
-		print "CHANGE DETECTED!"
-	
+	frame = get_frame()
+	if detect_change(frame, 100, detector):
+		change_detected =True
+		for d in additional_detectors:
+			if (not detect_change(frame, 100, d)):
+			    change_detected =False
+			    break
+		if (change_detected):
+			print "CHANGE DETECTED!"
+			print "Is it unlocked? (y/n)"
+			cv2.namedWindow("Change", cv2.WINDOW_AUTOSIZE)
+			cv2.imshow("Change", frame)
+			ch = cv2.waitKey()
+			if ch == ord("n"):
+				additional_detectors.append(create_detector(frame))
+			else:
+				correct_pin = pin
+				done_cracking = True
+				print "CORRECT PIN: ", pin
 
 def find_drop():
 	global DROP_Z, increment
@@ -1110,7 +1138,7 @@ def main(args):
 	#(frame, rotation_angle, shear_angle) = derotate_and_deshear(frame)
 	
 	image = get_frame()
-	writedelay = .2
+	writedelay = .5
 	
 	buttons = calibrate_buttons()
 
