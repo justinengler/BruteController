@@ -10,11 +10,9 @@ import time
 import re
 import serial
 import pickle
-import argparse
 import brutecontroller as bc
 
-#ideal_positions = ([(163,51),(301,47),(152,428),(305,433)])
-ideal_positions = ([(166,34),(325,34),(166,600),(325,600)])
+ideal_positions = ([(163,51),(301,47),(152,428),(305,433)])
 #ideal_positions = [(169.0,96.0),(311.05.0),(240.0, 257.0),(240.0,393.0)]
 
 V_CARD_WIDTH= ideal_positions[1][0] - ideal_positions[0][0]
@@ -27,6 +25,8 @@ REAL_CARD_WIDTH = abs(real_positions[0][0] - real_positions[1][0])#3.6
 REAL_CARD_HEIGHT = abs(real_positions[0][1] - real_positions[3][1]) #7.5
 
 V2R = (float(REAL_CARD_WIDTH) / float(V_CARD_WIDTH), float(REAL_CARD_HEIGHT)/float(V_CARD_HEIGHT))
+print REAL_CARD_WIDTH, REAL_CARD_HEIGHT, V2R
+
 
 CIRCLE_THICKNESS = 2
 CIRCLE_RADIUS =5
@@ -35,10 +35,9 @@ PURPLE_COLOR=(255,0,255)
 
 DROP_Z = 0
 
-WINDOW_NAME = "R2B2"
 
 CLIPSIZE = 20
-IMG_SIZE = (480, 640)
+IMG_SIZE = 480
 
 FALSELIST = ("0","False","false","FALSE","f","F","no","No", "NO")
 TRUELIST = ("1","True","true","TRUE","t","T", "yes", "Yes", "YES")
@@ -49,7 +48,7 @@ cam = None
 rotation_angle = None
 shear_angle = None
 perspective_xform = None
-orientation = 0
+orientation = 180
 detector = None
 additional_detectors = list()
 done_cracking = False
@@ -87,6 +86,12 @@ def serialsetup():
 	ser.flushOutput()
 	readuntil(ser,'>')
 
+'''
+Currently set up to find characters, not buttons
+USE: python recognize.py [image] <b>
+b indicates finding buttons, by default it
+will find characters at the moment
+'''
 
 # potentially useful for looking for characters
 def squarish(group, margin):
@@ -370,7 +375,7 @@ def unshear(img, angle):
 
 
 ''' takes an image, finds the primary vertical and horizontal axes of
-the object, and attempts to rotate and shear the image to make
+the main object, and attempts to rotate and shear the image to make
 these axes exactly vertical and horizontal'''
 def derotate_and_deshear(img):
 	gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
@@ -400,7 +405,7 @@ def derotate_and_deshear(img):
 	show(img, "lines")
 
 	rotation_matrix = cv2.getRotationMatrix2D((len(img[0]) / 2, len(img) / 2), rotation_angle, 1)
-	img = cv2.warpAffine(img, rotation_matrix, (IMG_SIZE[0], IMG_SIZE[1]), img, cv2.INTER_LINEAR, cv2.BORDER_TRANSPARENT)
+	img = cv2.warpAffine(img, rotation_matrix, (IMG_SIZE, IMG_SIZE), img, cv2.INTER_LINEAR, cv2.BORDER_TRANSPARENT)
 
 
 	# POST ROTATION
@@ -434,6 +439,28 @@ def show(img, title):
 		cv2.waitKey(0)
 		cv2.destroyWindow(title)
 
+def combine(orient, img1, img2, img3=None, img4=None):
+	h1, w1 = img1.shape[:2]
+	h2, w2 = img2.shape[:2]
+	if orient == 'f':
+		h3, w3 = img3.shape[:2]
+		h4, w4 = img4.shape[:2]
+		vis = np.zeros(max(h1, h2) + max(h3, h4), max(w1, w3) + max(w2, w4), np.uint8)
+		vis[0:h1, 0:w1] = img1
+		vis[0:h2, w1:w1 + w2] = img2
+		vis[h1:h1 + h3, 0:w3] = img3
+		vis[h2:h2 + h4, w3:w3 + w4] = img4
+	elif orient == 'h':
+		vis = np.zeros((max(h1, h2), w1 + w2), np.uint8)
+		vis[0:h1, 0:w1] = img1
+		vis[0:h2, w1:w1 + w2] = img2
+	elif orient == 'v':
+		vis = np.zeros((max(h1, h2), w1 + w2), np.uint8)
+		vis[0:h1, 0:w1] = img1
+		vis[h1:h1 + h2, 0:w2] = img2
+
+	# vis = cv2.cvtColor(vis, cv2.COLOR_GRAY2BGR)
+	return vis
 
 ''' converts the coordinates of a point on a derotated and desheared
 angle into a point on the original rotated and sheared angle. Does not
@@ -445,10 +472,10 @@ def virtual_to_real(point, rotation_angle, shear_angle, perspective_xform):
 	unrotation_matrix = np.mat([[.0,.0,.0],[.0,.0,.0],[.0,.0,.0]])
 	unrotation_matrix[0,0] = np.cos(np.deg2rad(-rotation_angle)) 
 	unrotation_matrix[0,1] = np.sin(np.deg2rad(-rotation_angle))
-	unrotation_matrix[0,2] = (1 - ((np.cos(np.deg2rad(rotation_angle)) - np.sin(np.deg2rad(rotation_angle))))) * IMG_SIZE[0] / 2
+	unrotation_matrix[0,2] = (1 - ((np.cos(np.deg2rad(rotation_angle)) - np.sin(np.deg2rad(rotation_angle))))) * IMG_SIZE / 2
 	unrotation_matrix[1,0] = -np.sin(np.deg2rad(-rotation_angle))
 	unrotation_matrix[1,1] = np.cos(np.deg2rad(rotation_angle))
-	unrotation_matrix[1,2] = (1 - ((np.sin(np.deg2rad(rotation_angle)) + np.cos(np.deg2rad(rotation_angle))))) * IMG_SIZE[1] / 2
+	unrotation_matrix[1,2] = (1 - ((np.sin(np.deg2rad(rotation_angle)) + np.cos(np.deg2rad(rotation_angle))))) * IMG_SIZE / 2
 	untransformed = unrotation_matrix*unsheared
 	
 	return untransformed
@@ -477,7 +504,7 @@ def backTranslate(img, rotation_angle, shear_angle):
 
 	rotation_matrix = cv2.getRotationMatrix2D((len(img[0]) / 2, len(img) / 2), -rotation_angle, 1)
 
-	img = cv2.warpAffine(img, rotation_matrix, IMG_SIZE, img, cv2.INTER_LINEAR, cv2.BORDER_TRANSPARENT)
+	img = cv2.warpAffine(img, rotation_matrix, (IMG_SIZE, IMG_SIZE), img, cv2.INTER_LINEAR, cv2.BORDER_TRANSPARENT)
 	show(img, "backtranslated")
 
 	return img
@@ -514,10 +541,9 @@ def perspective_shift(img):
 		tempimg = np.copy(img)
 		for box in contour_boxes:
 			cv2.rectangle(tempimg, (box[0], box[1]), (box[0] + box[2], box[1] + box[3]), (0, 255, 0), 2)
-		cv2.imshow(WINDOW_NAME, tempimg)
-		print "Identified these landmarks (press any key to continue)"
-		cv2.waitKey(2000)
-		
+		show(tempimg, "contours")
+		print "LANDMARKS:", landmarks
+
 		# square is in "Z" pattern
 		def in_square(square, points):
 			result = list()
@@ -547,7 +573,7 @@ def perspective_shift(img):
 			dst = np.array(ideal_positions, np.float32 )
 			print(dst)
 			xform =cv2.getPerspectiveTransform(src,dst)
-			shifted_img = cv2.warpPerspective(img, xform, IMG_SIZE)
+			shifted_img = cv2.warpPerspective(img, xform, (IMG_SIZE,IMG_SIZE))
 
 			return shifted_img, xform
 		
@@ -582,7 +608,7 @@ def perspective_shift(img):
 					print "good"
 					break
 		else:
-			cv2.imshow(WINDOW_NAME, img)
+			cv2.imshow("cam", img)
 		
 		tries += 1
 		if (len(landmarks) or 4 and good_transform(shifted_img, ideal_positions)) or (tries >= MAX_TRIES):
@@ -617,7 +643,9 @@ def create_detector(img):
 	if (region != None):
 		imgg = imgg[region[0]:region[2], region[1]:region[3]]
 
-			
+	cv2.namedWindow("detector", cv2.WINDOW_AUTOSIZE)
+	cv2.imshow("detector", imgg)
+		
 	keypoints = surfDetector.detect(imgg)
 	keypoints, descriptors = surfDescriptorExtractor.compute(imgg,keypoints)
 
@@ -657,6 +685,22 @@ def detect_change(cur_img, mismatch_threshold, detector_to_use):
 			
 	return mismatches > mismatch_threshold
 
+''' some GUI code, adds the circle to the image and stores the x,y, and value entered int oa button list '''
+def on_click(event, x, y,flag,param):
+	global image, button_list
+	if event == cv2.EVENT_LBUTTONUP:
+		print("CLICK")
+		print x,y
+		cv2.circle(image, (x,y), CIRCLE_RADIUS, CIRCLE_COLOR, CIRCLE_THICKNESS)
+		v = raw_input("Enter Button Value: ")
+		
+		print(v)    
+		button_list.append((x,y,v))
+		''' TODO: add removing a button functionality in case you mis-click ''' 
+	elif event == cv2.EVENT_RBUTTONUP:
+		print("RIGHTCLICK")
+
+
 
 def on_button_identified(event, x, y, flag, param):
 	global DROP_Z
@@ -681,7 +725,7 @@ def pick_button(frame, winname, buttondict, buttonname):
 	cv2.setMouseCallback(winname, on_button_identified, (winname, frame, buttondict, buttonname))
 	print "Click the %s button on the screen and then adjust Z axis using 'q' and 'e'" % buttonname
 	print "Press 'c' when calibrated"
-	cv2.imshow(winname, frame)
+	cv2.imshow("Calibration", frame)
 	ch = cv2.waitKey()
 
 	while ch != ord('c')and ch != ord('v'):
@@ -691,37 +735,42 @@ def pick_button(frame, winname, buttondict, buttonname):
 				button["z"] = button["z"] - increment
 				button = buttondict[buttonname]
 				direct_move(button['x'],button['y'],button['z'])
-											
+				#time.sleep(writedelay)
+								
 			elif ch == ord('e'):
 				button = buttondict[buttonname]
 				button["z"] = button["z"] + increment
 				button = buttondict[buttonname]
 				direct_move(button['x'],button['y'],button['z'])
-			
+				#time.sleep(writedelay)
+
 			elif ch == ord('w'):
 				button = buttondict[buttonname]
 				button["y"] = button["y"] + increment
 				button = buttondict[buttonname]
 				direct_move(button['x'],button['y'],button['z'])
-				
+				#time.sleep(writedelay)
+
 			elif ch == ord('s'):
 				button = buttondict[buttonname]
 				button["y"] = button["y"] - increment
 				button = buttondict[buttonname]
 				direct_move(button['x'],button['y'],button['z'])
+				#time.sleep(writedelay)
 
 			elif ch == ord('a'):
 				button = buttondict[buttonname]
 				button["x"] = button["x"] - increment
 				button = buttondict[buttonname]
 				direct_move(button['x'],button['y'],button['z'])
+				#time.sleep(writedelay)
 
 			elif ch == ord('d'):
 				button = buttondict[buttonname]
 				button["x"] = button["x"] + increment
 				button = buttondict[buttonname]
 				direct_move(button['x'],button['y'],button['z'])
-
+				#time.sleep(writedelay)
 			elif ch == ord('p'):
 				print "dumping", buttondict
 				pickle.dump(buttondict, open("buttons.p", 'w'))
@@ -736,8 +785,6 @@ def pick_button(frame, winname, buttondict, buttonname):
 				increment = float(str(unichr(ch)))/ 10
 				print float(str(unichr(ch)))
 				print increment
-			else:
-				print ch
 			
 				
 		ch = cv2.waitKey()
@@ -745,9 +792,12 @@ def pick_button(frame, winname, buttondict, buttonname):
 		
 def calibrate_buttons():
 	global cam, detector
-	
+	#cv2.destroyAllWindows()
+	cv2.destroyWindow("cam")
+
+	cv2.namedWindow("Calibration", cv2.WINDOW_AUTOSIZE)
 	frame =get_frame()
-	cv2.imshow(WINDOW_NAME, frame)
+	cv2.imshow("Calibration", frame)
 
 	print "Position the device under the robot."
 	print "Press 'w' when this is completed"
@@ -761,7 +811,8 @@ def calibrate_buttons():
 
 	frame =get_frame()
 	
-	cv2.imshow(WINDOW_NAME, frame)
+	cv2.destroyWindow("Calibration")
+	cv2.imshow("Calibration", frame)
 		
 	
 	find_drop()
@@ -776,10 +827,10 @@ def calibrate_buttons():
 	print "Is there an \"OK\" button? (y/n)"
 	ch = cv2.waitKey()
 	if ch == ord('y'):
-		pick_button(frame, WINDOW_NAME, buttons, "OK")
+		pick_button(frame, "Calibration", buttons, "OK")
 	
 	for number in range(0,10):
-		pick_button(frame, WINDOW_NAME, buttons, str(number))
+		pick_button(frame, "Calibration", buttons, str(number))
 
 	pickle.dump(buttons, open("buttons.p", 'w'))
 				
@@ -825,7 +876,8 @@ def define_buttons():
 
 def calibrate_camera(cam):
 	global orientation
-	
+	cv2.namedWindow('cam')
+
 	perspective_xform = None
 	
 	print "Calibrating Camera: Press \"w\" when the camera is in position and the calibration card is placed directly under the robot"
@@ -833,7 +885,7 @@ def calibrate_camera(cam):
 	while True:
 		vis = get_frame()
 		
-		cv2.imshow(WINDOW_NAME, vis)
+		cv2.imshow('cam', vis)
 		ch = 0xFF & cv2.waitKey(5)
 		if ch == 27:
 			cv2.destroyAllWindows()
@@ -842,32 +894,30 @@ def calibrate_camera(cam):
 			cv.SaveImage("calib.jpg", cv.fromarray(vis))
 		if ch == ord('w'):
 			
-			image = cv2.resize(vis,  IMG_SIZE, fx=0.0, fy=0.0, interpolation=cv2.INTER_AREA)
+			image = cv2.resize(vis, (IMG_SIZE, IMG_SIZE), fx=0.0, fy=0.0, interpolation=cv2.INTER_AREA)
 			
 			#detector = create_detector(image)
 			print "Calibrating..."
 			image, perspective_xform = perspective_shift(image)
 
 			if (perspective_xform != None):
-				print "Calibration Attempted: press 'w' to accept, 'd' to reject and try again"
-				cv2.imshow(WINDOW_NAME, image)
+				print "Calibration Successful"
+				show(image, "shifted")
 				ch = cv2.waitKey()
-				while ch != ord('w') and ch != ord('d'):
-					ch = cv2.waitKey()
-					
 				if ch == ord('w'):
+					print "BREAK"
 					break
-					
 			else:
 				print "Calibration Failed."
 				print "Try repositioning the camera or card"
 
 	return perspective_xform
 
-def setup_camera(camnum=0):
+def setup_camera():
 	global cam
-	cam = cv2.VideoCapture(camnum)
-	cam.open(camnum)
+	video_src = 0
+	cam = cv2.VideoCapture(0)
+	cam.open(0)
 	return cam
 
 def get_frame():
@@ -876,20 +926,20 @@ def get_frame():
 		setup_camera()
 
 	cam.read()
-	frame = cv2.resize(cam.read()[1],  IMG_SIZE, fx=0.0, fy=0.0, interpolation=cv2.INTER_AREA)
+	frame = cv2.resize(cam.read()[1], (IMG_SIZE, IMG_SIZE), fx=0.0, fy=0.0, interpolation=cv2.INTER_AREA)
 	
 	if orientation != 0:
-		rotation_matrix = cv2.getRotationMatrix2D((IMG_SIZE[0]/2, IMG_SIZE[1]/2),orientation, 1)
-		frame = cv2.warpAffine(frame, rotation_matrix, IMG_SIZE, frame, cv2.INTER_LINEAR, cv2.BORDER_TRANSPARENT)
+		rotation_matrix = cv2.getRotationMatrix2D((IMG_SIZE/2, IMG_SIZE/2),orientation, 1)
+		frame = cv2.warpAffine(frame, rotation_matrix, (IMG_SIZE, IMG_SIZE), frame, cv2.INTER_LINEAR, cv2.BORDER_TRANSPARENT)
 		
 	
 	if (perspective_xform != None):
-		frame = cv2.warpPerspective(frame, perspective_xform, IMG_SIZE)
+		frame = cv2.warpPerspective(frame, perspective_xform, (IMG_SIZE,IMG_SIZE))
 	
 	
 	if (rotation_angle != None):
 		rotation_matrix = cv2.getRotationMatrix2D((len(frame[0]) / 2, len(frame) / 2), rotation_angle, 1)
-		frame = cv2.warpAffine(frame, rotation_matrix, IMG_SIZE, frame, cv2.INTER_LINEAR, cv2.BORDER_TRANSPARENT)
+		frame = cv2.warpAffine(frame, rotation_matrix, (IMG_SIZE, IMG_SIZE), frame, cv2.INTER_LINEAR, cv2.BORDER_TRANSPARENT)
 
 
 	if (shear_angle != None):
@@ -1027,7 +1077,7 @@ def enterpin(pin, buttondict):
 			print "CHANGE DETECTED!"
 			print "Is it unlocked? (y/n)"
 			cv2.namedWindow("Change", cv2.WINDOW_AUTOSIZE)
-			cv2.imshow(WINDOW_NAME, frame)
+			cv2.imshow("Change", frame)
 			ch = cv2.waitKey()
 			if ch == ord("n"):
 				additional_detectors.append(create_detector(frame))
@@ -1056,53 +1106,26 @@ def find_drop():
 
 def main(args):
 	global display, image, cam, shear_angle, rotation_angle, perspective_xform, orientation, detector
-	
-	parser = argparse.ArgumentParser(description='This program controls a brute-forcing robot. Load arguments from a file with @FILENAME', fromfile_prefix_chars='@')
-	#parser.add_argument('-c','--config', help='NI! loads a config file')
-	parser.add_argument('-p','--positions',help='NI! import a saved positions file')
-	parser.add_argument('-r','--resume',help='NI! resume a previous run')
-	parser.add_argument('-s','--serialdevice',help='NI! serial device (Mac/Linux) or COM port like "COMx" (Windows)')
-	parser.add_argument('-v','--videonum',help='NI! Video capture device. "0" is the first, default value')
-	parser.add_argument('-k','--keyconfig', help='NI! Use keyboard configuration, not camera configuration', action="store_true")
-	parser.add_argument('-n','--nodetect', help='NI! Do not attempt to detect a finished run.  Runs until the series is completed', action="store_true")
-	parser.add_argument('-f','--pinfile', help='NI! Load brute force attempts from a file')
-	parser.add_argument('-a','--android', help='NI! Android mode.  Waits 30 seconds each 5 guesses, then presses ok', action="store_true")
-	
-	
-	args = parser.parse_args()
- 
-	## show values ##
-	print args
- 
-	#exit()
-	
 	display = True
 
 	# move robot out of the way
 	serialsetup()
 	move(0,0,5)
-
-
+	
+	print "Press a key to indicate the rotation of the camera: 'q' = viewing from left, 'w' = viewing from top, 'e' = viewing from right,'r' = viewing from bottom"
+	ch = raw_input()
+	if ch == 'q':
+		orientation = 270
+	elif ch == 'w':
+		orientation = 180
+	elif ch == 'e':
+		orientation = 90
+	else:
+		orientation = 0
+	
+	
 	cam = setup_camera()
 
-	cv2.namedWindow(WINDOW_NAME, cv2.WINDOW_AUTOSIZE)
-	print "Press a key to indicate the rotation of the camera: 'q' = viewing from left, 'w' = viewing from top, 'e' = viewing from right,'r' = viewing from bottom"
-	while True:
-		cv2.imshow(WINDOW_NAME, get_frame())
-		ch = cv2.waitKey(5)
-		if ch == ord('q'):
-			orientation = 270
-			break
-		elif ch == ord('w'):
-			orientation = 180
-			break
-		elif ch == ord('e'):
-			orientation = 90
-			break
-		elif ch == ord('r'):
-			orientation = 0
-			break
-	
 	perspective_xform = calibrate_camera(cam) 
 	if perspective_xform == None:
 		print "Calibration Failed. Exiting"
@@ -1118,6 +1141,7 @@ def main(args):
 	writedelay = .5
 	
 	buttons = calibrate_buttons()
+
 
 	move(0,0,4)
 
@@ -1139,5 +1163,90 @@ def main(args):
 		
 	cv2.destroyAllWindows()
 		
+	#nonmainstuff(image, find_chars)
+
+def nonmainstuff(image, find_chars):
+	(image, rotation_angle, shear_angle) = derotate_and_deshear(image)
+
+	buttons = find_contours_MSER(image, 60, 14400, find_chars, (10, 1.5))
+#     buttons = find_contours_FC(image, 200, 14400, find_chars, (10, 1.5))
+
+	print(buttons)
+
+	if (find_chars):
+		all_symbols = []
+		for button in buttons:
+#     symbols = [(box[0] + button[0], box[1] + button[1], box[2], box[3]) for box in find_contours_MSER(img[button[1]: button[1] + button[3], button[0]:button[0] + button[2], ], 0, 500, True)]
+#     all_symbols.extend(symbols)
+			all_symbols.append(button)
+#     print(symbols)
+#     print(all_symbols)
+
+
+		tempimg = np.copy(image)
+		for box in all_symbols:
+			print(box)
+			cv2.rectangle(tempimg, (box[0], box[1]), (box[0] + box[2], box[1] + box[3]), (0, 255, 0), 1)
+
+		show(tempimg, "ALL SYMBOLS")
+
+#   selected = np.zeros((CLIPSIZE,CLIPSIZE*len(buttons)))
+#   for i in range(len(buttons)):
+#     selected[0:CLIPSIZE,i*CLIPSIZE:(i+1)*CLIPSIZE] = buttons[i]
+#
+#   show(selected)
+#   for i in range(len(buttons)):
+#     show(buttons[i])
+
+		gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+		canny = cv2.Canny(gray, 0, 50)
+
+		block_size = 5
+		param = 1
+
+		thresh = gray
+		erosion_size = 3
+		kernel = cv2.getStructuringElement(cv2.MORPH_ERODE, (erosion_size, erosion_size))
+		thresh = cv2.erode(thresh, kernel)
+		print("SYMOBL COUNT:" + str(len(all_symbols)))
+
+		def slice_and_resize(img, box):
+			clip = gray[box[1]:box[1] + box[3], box[0]:box[0] + box[2]]
+
+			w, h = box[2], box[3]
+
+			padded = np.copy(gray[0:CLIPSIZE, 0:CLIPSIZE])
+			padded[:, :] = 125
+
+			if (h > w):
+				scale_factor = CLIPSIZE / float(h)
+				clip = cv2.resize(clip, None, fx=scale_factor, fy=scale_factor, interpolation=cv2.INTER_NEAREST)
+				i = 0
+				for col in clip.T:
+					padded[:, i] = col
+					i += 1
+
+			else:
+				scale_factor = CLIPSIZE / float(w)
+				clip = cv2.resize(clip, None, fx=scale_factor, fy=scale_factor, interpolation=cv2.INTER_NEAREST)
+				i = 0
+				for row in clip:
+					padded[i, :] = row
+					i += 1
+	#     show(padded, "PADDED")
+			return padded
+
+		display = True
+	#   thresh = cv2.adaptiveThreshold(thresh, 250, cv2.ADAPTIVE_THRESH_MEAN_C, cv2.THRESH_BINARY, block_size, param)
+		symbol_images = [ slice_and_resize(gray, box) for box in all_symbols]
+		#symbol_images = [ cv2.resize(gray[box[1]:box[1] + box[3], box[0]:box[0] + box[2]], (CLIPSIZE, CLIPSIZE), fx=0, fy=0, interpolation=cv2.INTER_NEAREST) for box in all_symbols]
+
+	#     symbol_images = [cv2.erode(image, kernel) for image in symbol_images]
+	#     symbol_images = [image - 2 * cv2.GaussianBlur(image, (5,5), sigmaX=0) for image in symbol_images]
+		[show(image, "blank") for image in symbol_images]
+	#     symbol_images =[cv2.resize(image, (CLIPSIZE,CLIPSIZE)) for image in symbol_images]
+		#svm(symbol_images)
+
+
 if __name__ == "__main__":
 	main(sys.argv)
