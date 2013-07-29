@@ -10,6 +10,7 @@ import time
 import re
 import serial
 import pickle
+import argparse
 import brutecontroller as bc
 
 ideal_positions = ([(163,51),(301,47),(152,428),(305,433)])
@@ -86,12 +87,6 @@ def serialsetup():
 	ser.flushOutput()
 	readuntil(ser,'>')
 
-'''
-Currently set up to find characters, not buttons
-USE: python recognize.py [image] <b>
-b indicates finding buttons, by default it
-will find characters at the moment
-'''
 
 # potentially useful for looking for characters
 def squarish(group, margin):
@@ -439,28 +434,6 @@ def show(img, title):
 		cv2.waitKey(0)
 		cv2.destroyWindow(title)
 
-def combine(orient, img1, img2, img3=None, img4=None):
-	h1, w1 = img1.shape[:2]
-	h2, w2 = img2.shape[:2]
-	if orient == 'f':
-		h3, w3 = img3.shape[:2]
-		h4, w4 = img4.shape[:2]
-		vis = np.zeros(max(h1, h2) + max(h3, h4), max(w1, w3) + max(w2, w4), np.uint8)
-		vis[0:h1, 0:w1] = img1
-		vis[0:h2, w1:w1 + w2] = img2
-		vis[h1:h1 + h3, 0:w3] = img3
-		vis[h2:h2 + h4, w3:w3 + w4] = img4
-	elif orient == 'h':
-		vis = np.zeros((max(h1, h2), w1 + w2), np.uint8)
-		vis[0:h1, 0:w1] = img1
-		vis[0:h2, w1:w1 + w2] = img2
-	elif orient == 'v':
-		vis = np.zeros((max(h1, h2), w1 + w2), np.uint8)
-		vis[0:h1, 0:w1] = img1
-		vis[h1:h1 + h2, 0:w2] = img2
-
-	# vis = cv2.cvtColor(vis, cv2.COLOR_GRAY2BGR)
-	return vis
 
 ''' converts the coordinates of a point on a derotated and desheared
 angle into a point on the original rotated and sheared angle. Does not
@@ -685,22 +658,6 @@ def detect_change(cur_img, mismatch_threshold, detector_to_use):
 			
 	return mismatches > mismatch_threshold
 
-''' some GUI code, adds the circle to the image and stores the x,y, and value entered int oa button list '''
-def on_click(event, x, y,flag,param):
-	global image, button_list
-	if event == cv2.EVENT_LBUTTONUP:
-		print("CLICK")
-		print x,y
-		cv2.circle(image, (x,y), CIRCLE_RADIUS, CIRCLE_COLOR, CIRCLE_THICKNESS)
-		v = raw_input("Enter Button Value: ")
-		
-		print(v)    
-		button_list.append((x,y,v))
-		''' TODO: add removing a button functionality in case you mis-click ''' 
-	elif event == cv2.EVENT_RBUTTONUP:
-		print("RIGHTCLICK")
-
-
 
 def on_button_identified(event, x, y, flag, param):
 	global DROP_Z
@@ -913,11 +870,10 @@ def calibrate_camera(cam):
 
 	return perspective_xform
 
-def setup_camera():
+def setup_camera(camnum=0):
 	global cam
-	video_src = 0
-	cam = cv2.VideoCapture(0)
-	cam.open(0)
+	cam = cv2.VideoCapture(camnum)
+	cam.open(camnum)
 	return cam
 
 def get_frame():
@@ -1106,6 +1062,26 @@ def find_drop():
 
 def main(args):
 	global display, image, cam, shear_angle, rotation_angle, perspective_xform, orientation, detector
+	
+	parser = argparse.ArgumentParser(description='This program controls a brute-forcing robot. Load arguments from a file with @FILENAME', fromfile_prefix_chars='@')
+	#parser.add_argument('-c','--config', help='NI! loads a config file')
+	parser.add_argument('-p','--positions',help='NI! import a saved positions file')
+	parser.add_argument('-r','--resume',help='NI! resume a previous run')
+	parser.add_argument('-s','--serialdevice',help='NI! serial device (Mac/Linux) or COM port like "COMx" (Windows)')
+	parser.add_argument('-v','--videonum',help='NI! Video capture device. "0" is the first, default value')
+	parser.add_argument('-k','--keyconfig', help='NI! Use keyboard configuration, not camera configuration', action="store_true")
+	parser.add_argument('-n','--nodetect', help='NI! Do not attempt to detect a finished run.  Runs until the series is completed', action="store_true")
+	parser.add_argument('-f','--pinfile', help='NI! Load brute force attempts from a file')
+	parser.add_argument('-a','--android', help='NI! Android mode.  Waits 30 seconds each 5 guesses, then presses ok' action="store_true")
+	
+	
+	args = parser.parse_args()
+ 
+	## show values ##
+	print args
+ 
+	#exit()
+	
 	display = True
 
 	# move robot out of the way
@@ -1122,7 +1098,6 @@ def main(args):
 		orientation = 90
 	else:
 		orientation = 0
-	
 	
 	cam = setup_camera()
 
@@ -1141,7 +1116,6 @@ def main(args):
 	writedelay = .5
 	
 	buttons = calibrate_buttons()
-
 
 	move(0,0,4)
 
@@ -1163,90 +1137,5 @@ def main(args):
 		
 	cv2.destroyAllWindows()
 		
-	#nonmainstuff(image, find_chars)
-
-def nonmainstuff(image, find_chars):
-	(image, rotation_angle, shear_angle) = derotate_and_deshear(image)
-
-	buttons = find_contours_MSER(image, 60, 14400, find_chars, (10, 1.5))
-#     buttons = find_contours_FC(image, 200, 14400, find_chars, (10, 1.5))
-
-	print(buttons)
-
-	if (find_chars):
-		all_symbols = []
-		for button in buttons:
-#     symbols = [(box[0] + button[0], box[1] + button[1], box[2], box[3]) for box in find_contours_MSER(img[button[1]: button[1] + button[3], button[0]:button[0] + button[2], ], 0, 500, True)]
-#     all_symbols.extend(symbols)
-			all_symbols.append(button)
-#     print(symbols)
-#     print(all_symbols)
-
-
-		tempimg = np.copy(image)
-		for box in all_symbols:
-			print(box)
-			cv2.rectangle(tempimg, (box[0], box[1]), (box[0] + box[2], box[1] + box[3]), (0, 255, 0), 1)
-
-		show(tempimg, "ALL SYMBOLS")
-
-#   selected = np.zeros((CLIPSIZE,CLIPSIZE*len(buttons)))
-#   for i in range(len(buttons)):
-#     selected[0:CLIPSIZE,i*CLIPSIZE:(i+1)*CLIPSIZE] = buttons[i]
-#
-#   show(selected)
-#   for i in range(len(buttons)):
-#     show(buttons[i])
-
-		gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-		canny = cv2.Canny(gray, 0, 50)
-
-		block_size = 5
-		param = 1
-
-		thresh = gray
-		erosion_size = 3
-		kernel = cv2.getStructuringElement(cv2.MORPH_ERODE, (erosion_size, erosion_size))
-		thresh = cv2.erode(thresh, kernel)
-		print("SYMOBL COUNT:" + str(len(all_symbols)))
-
-		def slice_and_resize(img, box):
-			clip = gray[box[1]:box[1] + box[3], box[0]:box[0] + box[2]]
-
-			w, h = box[2], box[3]
-
-			padded = np.copy(gray[0:CLIPSIZE, 0:CLIPSIZE])
-			padded[:, :] = 125
-
-			if (h > w):
-				scale_factor = CLIPSIZE / float(h)
-				clip = cv2.resize(clip, None, fx=scale_factor, fy=scale_factor, interpolation=cv2.INTER_NEAREST)
-				i = 0
-				for col in clip.T:
-					padded[:, i] = col
-					i += 1
-
-			else:
-				scale_factor = CLIPSIZE / float(w)
-				clip = cv2.resize(clip, None, fx=scale_factor, fy=scale_factor, interpolation=cv2.INTER_NEAREST)
-				i = 0
-				for row in clip:
-					padded[i, :] = row
-					i += 1
-	#     show(padded, "PADDED")
-			return padded
-
-		display = True
-	#   thresh = cv2.adaptiveThreshold(thresh, 250, cv2.ADAPTIVE_THRESH_MEAN_C, cv2.THRESH_BINARY, block_size, param)
-		symbol_images = [ slice_and_resize(gray, box) for box in all_symbols]
-		#symbol_images = [ cv2.resize(gray[box[1]:box[1] + box[3], box[0]:box[0] + box[2]], (CLIPSIZE, CLIPSIZE), fx=0, fy=0, interpolation=cv2.INTER_NEAREST) for box in all_symbols]
-
-	#     symbol_images = [cv2.erode(image, kernel) for image in symbol_images]
-	#     symbol_images = [image - 2 * cv2.GaussianBlur(image, (5,5), sigmaX=0) for image in symbol_images]
-		[show(image, "blank") for image in symbol_images]
-	#     symbol_images =[cv2.resize(image, (CLIPSIZE,CLIPSIZE)) for image in symbol_images]
-		#svm(symbol_images)
-
-
 if __name__ == "__main__":
 	main(sys.argv)
