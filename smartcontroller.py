@@ -1,4 +1,6 @@
+import threading
 import sys
+import os
 import cv2
 import cv2.cv as cv
 import numpy as np
@@ -11,17 +13,14 @@ import re
 import serial
 import pickle
 import argparse
-import brutecontroller as bc
 
-#ideal_positions = ([(163,51),(301,47),(152,428),(305,433)])
-ideal_positions = ([(166,34),(325,34),(166,600),(325,600)])
-#ideal_positions = [(169.0,96.0),(311.05.0),(240.0, 257.0),(240.0,393.0)]
+ideal_positions = ([(163,51),(301,47),(152,428),(305,433)])
+#ideal_positions = ([(210,41),(423,41),(214,600),(423, 600)])
 
 V_CARD_WIDTH= ideal_positions[1][0] - ideal_positions[0][0]
 V_CARD_HEIGHT = ideal_positions[2][1] - ideal_positions[0][1]
 V_CARD_CENTER = (ideal_positions[0][0] + (V_CARD_WIDTH/2), ideal_positions[0][1] + (V_CARD_HEIGHT/2))
 
-#real_positions = [(-3.5,4.7,-0.9),(1.6,4.7,-0.9),(0,0,0),(0,-4.5,0.2)]
 real_positions = [(-2.3, 4.7, -2.2), (1.5,3., -2.1), (-2.3,-2.8,-1.8),(1.5,-2.8,-1.8)]
 REAL_CARD_WIDTH = abs(real_positions[0][0] - real_positions[1][0])#3.6
 REAL_CARD_HEIGHT = abs(real_positions[0][1] - real_positions[3][1]) #7.5
@@ -39,10 +38,16 @@ CURRENT_POINT = {'x':0.0, 'y':0.0, 'z':4.0}
 WINDOW_NAME = "R2B2"
 
 CLIPSIZE = 20
-IMG_SIZE = (480, 640)
+IMG_SIZE = 480
 
 FALSELIST = ("0","False","false","FALSE","f","F","no","No", "NO")
 TRUELIST = ("1","True","true","TRUE","t","T", "yes", "Yes", "YES")
+
+DONE = False
+
+cooldown = False
+cooldown_time = 0
+attempts_per_cooldown = 0
 
 button_list = list()
 image = None
@@ -66,17 +71,7 @@ FIRSTCHAR=ord('a')
 
 SERIALPORT="COM4" #'/dev/tty.usbmodem1411'
 
-XOF1=1.8
-YOF1=.8
-DR=1.75
-LI=0;
-
-global_layout = None
-
-
 writedelay=.5
-buttonids={}
-counter=0
 
 """If True, the input and output to serial are shown on the console"""
 SERIALTOCONSOLE=False
@@ -152,30 +147,6 @@ def distant_elimination(group):
 	else:
 		return None
 
-
-def dimension_check(group):
-	# test to see if height and width are similar, as well as area
-	DIMENSION_MARGIN = 10
-	MIN_GROUP_SIZE = 2
-
-	similar_dimensions = False
-	remove_list = []
-
-	# is there a way to combine the sums into a single function producing two values with a single pass?
-	avg_dimensions = (sum(box[2] for box in group) / float(len(group)), sum(box[3] for box in group) / float(len(group)))
-	for box in group:
-		similar_dimensions = np.abs(avg_dimensions[0] - box[2]) < DIMENSION_MARGIN and np.abs(avg_dimensions[1] - box[3]) < DIMENSION_MARGIN
-		if (not similar_dimensions):
-			remove_list.append(box)
-
-	for remove_box in remove_list:
-		group.remove(remove_box)
-
-	if (len(group) < MIN_GROUP_SIZE):
-		return None
-
-	return group
-
 # remove boxes from the group if they are overlapping another box
 def overlap_elimination(group, margin):
 	if (group != None):
@@ -220,9 +191,9 @@ def find_contours_MSER(img, minsize, maxsize, find_characters, margins):
 	minDiversity = 0.1
 	maxEvolution = 200
 	areaThreshold = 1.01
-	minMarging = 0.003
+	minMargin = 0.003
 	edgeBlurSize = 5
-	mser = cv2.MSER(delta, minArea, maxArea, maxVariation, minDiversity, maxEvolution, areaThreshold, minMarging, edgeBlurSize)
+	mser = cv2.MSER(delta, minArea, maxArea, maxVariation, minDiversity, maxEvolution, areaThreshold, minMargin, edgeBlurSize)
 
 	contours = mser.detect(gray, None)
 	buttons, stats = process_contours(contours, minsize, maxsize, img, "gray -> MSER", find_characters, margins)
@@ -257,231 +228,25 @@ def find_contours_FC(img, minsize, maxsize, find_characters, margins):
 # processes a list of contours based on whether it should be looking for buttons or characters
 def process_contours(contours, minsize, maxsize, img, contour_source, find_characters, (overlap_margin, squarish_margin)):
 	# try to find 9+ boxes with almost exactly the same dimensions
-	boxes = map(rectAndArea, filter(lambda cnt: cv2.contourArea(cnt) < maxsize and cv2.contourArea(cnt) > minsize, [r.reshape(-1, 1, 2) for r in contours]))
-
-	tempimg = np.copy(img)
-	for box in boxes:
-		cv2.rectangle(tempimg, (box[0][0], box[0][1]), (box[0][0] + box[0][2], box[0][1] + box[0][3]), (0, 255, 0), 2)
-
-	show(tempimg, "boxes")
-
-	contour_data = boxes
-
-	sorted_contours = sorted(contour_data, key=lambda c: c[1])
-
-
-	groups = []
-	keys = []
-	for k, g in it.groupby(sorted_contours, approx_area):
-		# just get the rect, don't need area any more
-		groups.append(list(contour[0] for contour in g))
-		keys.append(k)
-
-	if (not find_characters):
-		groups = [dimension_check(group) for group in groups]
-
-	groups = filter(lambda g: g != None, [overlap_elimination(group, overlap_margin) for group in groups])
-
-	if (not find_characters):
-		groups = [distant_elimination(group) for group in groups]
+	boxes = [x[0] for x in map(rectAndArea, filter(lambda cnt: cv2.contourArea(cnt) < maxsize and cv2.contourArea(cnt) > minsize, [r.reshape(-1, 1, 2) for r in contours]))]
+	
+	boxes = squarish(boxes, squarish_margin)
+	if len(boxes) > 0:
+		average_area = sum(b[2] * b[3] for b in boxes) / len(boxes)
 	else:
-		groups = filter(lambda g: g != None, [squarish(group, squarish_margin) for group in groups])
-
-
-	groups = filter(lambda g: g != None and len(g) > 0, groups)
-
-	for group in groups:
-		if (group != None):
-			tempimg = np.copy(img)
-			for box in group:
-				cv2.rectangle(tempimg, (box[0], box[1]), (box[0] + box[2], box[1] + box[3]), (0, 255, 0), 2)
-			show(tempimg, "Button Group from " + contour_source)
-
-
-	if (len(groups) > 0 and (find_characters )):
-		# flatten list
-		buttons = [box for group in groups for box in group]
-		average_area = sum(b[2] * b[3] for b in buttons) / len(buttons)
-	elif (len(groups) > 0 and not find_characters):
-		average_area = sum(sum(b[2] * b[3] for b in g) / float(len(g)) for g in groups) / float(len(groups))
-
-		if (len(groups) > 1):
-			buttons = sorted(groups, key=lambda g: np.abs(len(g) - 12))[0]
-		else:
-			buttons = groups[0]
-	else:
-		buttons = []
 		average_area = 0
+		
+	return boxes, average_area
 
-	tempimg = np.copy(img)
-	for box in buttons:
-		cv2.rectangle(tempimg, (box[0], box[1]), (box[0] + box[2], box[1] + box[3]), (0, 255, 0), 2)
-	show(tempimg, "ALL Button Group from " + contour_source)
-
-	return buttons, average_area
-
-# gets the angle of a line
-def get_angle(line):
-	return np.rad2deg(np.arctan(float(abs(line[1] - line[3])) / max(float(abs(line[0] - line[2])), .0000001)))
-
-
-'''finds the longest line and returns its angle'''
-def get_primary_axis_angle(lines):
-
-	longest_line = sorted(lines, key=lambda line: np.square(line[0] - line[2]) + np.square(line[1] - line[3]))[-1]
-	angle = get_angle(longest_line)
-	if (longest_line[1] < longest_line[3]):
-		angle = -angle
-
-	return (angle, longest_line)
-
-MARGIN = 20
-
-'''finds the longest line close to perpendicular to the primary_angle'''
-def get_secondary_axis_angle(lines):
-	longest = 0
-	longest_line = None
-	for line in lines:
-		length = np.square(line[0] - line[2]) + np.square(line[1] - line[3])
-		angle = get_angle(line)
-		if (length > longest and np.abs(angle) < MARGIN):
-			longest_line = line
-			longest = length
-
-	if (longest_line != None):
-		angle = get_angle(longest_line)
-	else:
-		angle = 0
-
-	if (longest_line[1] > longest_line[3]):
-		angle = -angle
-	return (angle, longest_line)
-
-# creates a shearing transform to remove the shear that is present in the image
-def unshear(img, angle):
-	m = np.zeros((2, 3))
-	m[0][0] = 1
-	m[0][1] = 0
-	m[0][2] = 0
-	m[1][0] = -np.sin(np.deg2rad(angle))
-	m[1][1] = 1
-	m[1][2] = 0
-	img = cv2.warpAffine(img, m, (len(img[0]), len(img)), img, cv2.INTER_LINEAR, cv2.BORDER_TRANSPARENT)
-	return img
-
-
-''' takes an image, finds the primary vertical and horizontal axes of
-the object, and attempts to rotate and shear the image to make
-these axes exactly vertical and horizontal'''
-def derotate_and_deshear(img):
-	gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-
-	
-	# ret,thresh = cv2.threshold(gray,150,255,1)
-
-	# Find contours with cv2.RETR_CCOMP
-#   contours, hierarchy = cv2.find_contours(sub, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
-	canny = cv2.Canny(gray, 110, 100)
-
-	show(img,"lines")
-	show(get_frame(), "lines")
-	MIN_LINE_LENGTH = 30
-	lines = cv2.HoughLinesP(canny, 1, np.pi / 180, 80, 0, MIN_LINE_LENGTH, 30)[0]
-
-	for line in lines:
-	     cv2.line(img, (int(line[0]), int(line[1])), (int(line[2]), int(line[3])), cv2.cv.CV_RGB(0, 255, 0), 4)
-	(primary_angle, primary_line) = get_primary_axis_angle(lines)
-	if (primary_angle > 0):
-		rotation_angle = 90 - primary_angle
-	else:
-		rotation_angle = -(90 + primary_angle)
-	
-	cv2.line(img, (int(primary_line[0]), int(primary_line[1])), (int(primary_line[2]), int(primary_line[3])), cv2.cv.CV_RGB(255,0,255), 4)
-
-	show(img, "lines")
-
-	rotation_matrix = cv2.getRotationMatrix2D((len(img[0]) / 2, len(img) / 2), rotation_angle, 1)
-	img = cv2.warpAffine(img, rotation_matrix, (IMG_SIZE[0], IMG_SIZE[1]), img, cv2.INTER_LINEAR, cv2.BORDER_TRANSPARENT)
-
-
-	# POST ROTATION
-	gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-	canny = cv2.Canny(gray, 110, 100)
-	lines = cv2.HoughLinesP(canny, 1, np.pi / 180, 80, 0, 30, 10)[0]
-
-#   for line in lines:
-#     cv2.line(img, (int(line[0]), int(line[1])), (int(line[2]), int(line[3])), cv2.cv.CV_RGB(0, 255, 0), 4)
-
-
-
-	(primary_angle, primary_line) = get_primary_axis_angle(lines)
-#   cv2.line(img, (int(primary_line[0]), int(primary_line[1])), (int(primary_line[2]), int(primary_line[3])), cv2.cv.CV_RGB(0, 0, 255), 4)
-
-	(shear_angle, secondary_line) = get_secondary_axis_angle(lines)
-
-#   if (secondary_line != None):
-#     cv2.line(img, (int(secondary_line[0]), int(secondary_line[1])), (int(secondary_line[2]), int(secondary_line[3])), cv2.cv.CV_RGB(255, 0, 0), 4)
-
-	img = unshear(img, shear_angle)
-	
-	return (img, rotation_angle, shear_angle)
-
-''' displays img in a window with title, waits for a key to be
-pressed, then destroys the window, if display is true '''
-def show(img, title):
-	if (display):
-		cv2.namedWindow(title, cv2.WINDOW_AUTOSIZE)
-		cv2.imshow(title, img)
-		cv2.waitKey(0)
-		cv2.destroyWindow(title)
-
-
-''' converts the coordinates of a point on a derotated and desheared
-angle into a point on the original rotated and sheared angle. Does not
-incorporate deskewing yet but that will be easily added '''
-def virtual_to_real(point, rotation_angle, shear_angle, perspective_xform):
-	unsheared = np.mat(point[0],point[1],point[3])
-	unsheared[1] = point[1] + (point[0] * (-np.sin(np.deg2rad(-shear_angle))))
-	unsheared[2] = 1
-	unrotation_matrix = np.mat([[.0,.0,.0],[.0,.0,.0],[.0,.0,.0]])
-	unrotation_matrix[0,0] = np.cos(np.deg2rad(-rotation_angle)) 
-	unrotation_matrix[0,1] = np.sin(np.deg2rad(-rotation_angle))
-	unrotation_matrix[0,2] = (1 - ((np.cos(np.deg2rad(rotation_angle)) - np.sin(np.deg2rad(rotation_angle))))) * IMG_SIZE[0] / 2
-	unrotation_matrix[1,0] = -np.sin(np.deg2rad(-rotation_angle))
-	unrotation_matrix[1,1] = np.cos(np.deg2rad(rotation_angle))
-	unrotation_matrix[1,2] = (1 - ((np.sin(np.deg2rad(rotation_angle)) + np.cos(np.deg2rad(rotation_angle))))) * IMG_SIZE[1] / 2
-	untransformed = unrotation_matrix*unsheared
-	
-	return untransformed
 
 def virtual_to_robot(point):
 	print "Point:",point
 	print"center:", V_CARD_CENTER        
 	x = (point[0] - V_CARD_CENTER[0]) * V2R[0]
 	y = -(point[1] - V_CARD_CENTER[1]) * V2R[1]
-	
-
-	#if orientation == 90:
-		
-	#elif orientation == 180:
-
-	#elif orientation == 270:
-			
 		
 	return x,y
 
-''' transforms an image opposite of the rotation_angle and shear_angle
-passed, used to revert an image that has undergone
-derotate_and_deshear '''
-def backTranslate(img, rotation_angle, shear_angle):
-	img = unshear(img, -shear_angle)
-
-	rotation_matrix = cv2.getRotationMatrix2D((len(img[0]) / 2, len(img) / 2), -rotation_angle, 1)
-
-	img = cv2.warpAffine(img, rotation_matrix, IMG_SIZE, img, cv2.INTER_LINEAR, cv2.BORDER_TRANSPARENT)
-	show(img, "backtranslated")
-
-	return img
 
 ''' static method, src and dst should be tweaked once the final frame
 is built to get a constant perspective shift, since the camera will
@@ -491,16 +256,16 @@ a card) and then get a perspective shift based on how that card is
 seen in the current setup versus how the reference shows it'''
 def perspective_shift(img):
 	global display, ideal_positions
+	max_area = 2000
+	min_contour_size  = 5
+	max_contour_size = 1000000
+	margins = (100,2)
 	
-	contour_boxes = overlap_elimination( find_contours_MSER(img, 5, 100000, True, (100, 2)),100)
-	landmarks = [(float(x[0] + (x[2]/2)), float(x[1] +(x[3]/2))) for x in contour_boxes]
-	landmarks = sorted(landmarks, key=lambda x: x[0] + (x[1] / 2))
-	
-	MAX_TRIES = 2
+	MAX_TRIES = 10
 	tries = 0
 	perspective_xform = None
 	shifted_img = img
-
+	
 	while True:
 		# TODO: Adjust the parameters to the find_contours_MSER to try to get 4 landmarks
 #                if len(landmarks) > 4:
@@ -509,7 +274,7 @@ def perspective_shift(img):
   #              elif len(landmarks) < 4:
    #                     break
 		
-		contour_boxes =  (filter (lambda x: x[2]*x[3] < 2000, overlap_elimination( find_contours_MSER(img, 5, 100000, True, (100, 2)),100)))
+		contour_boxes =  (filter (lambda x: x[2]*x[3] < 2000, overlap_elimination( find_contours_MSER(img, min_contour_size, max_contour_size, True,  margins),100)))
 		landmarks = [(float(x[0] + (x[2]/2)), float(x[1] +(x[3]/2))) for x in contour_boxes]
 
 		tempimg = np.copy(img)
@@ -548,14 +313,13 @@ def perspective_shift(img):
 			dst = np.array(ideal_positions, np.float32 )
 			print(dst)
 			xform =cv2.getPerspectiveTransform(src,dst)
-			shifted_img = cv2.warpPerspective(img, xform, IMG_SIZE)
+			shifted_img = cv2.warpPerspective(img, xform, (IMG_SIZE,IMG_SIZE))
 
 			return shifted_img, xform
 		
 		if len(landmarks) == 4:
 			landmarks = sort_to_square(landmarks)
 			shifted_img, perspective_xform = shift(landmarks, img)
-			
 		elif len(landmarks) > 4:
 			perms = list(itertools.combinations(range(len(landmarks)), 4))
 			potentials = list()                
@@ -658,88 +422,6 @@ def detect_change(cur_img, mismatch_threshold, detector_to_use):
 			
 	return mismatches > mismatch_threshold
 
-
-def on_button_identified(event, x, y, flag, param):
-	global DROP_Z
-	imagename, image, buttondict, buttonkey = param
-
-	if event == cv2.EVENT_LBUTTONUP:
-		print x,y
-		scratchimage = np.zeros(image.shape, np.uint8)
-		scratchimage[:] = image
-		cv2.circle(scratchimage, (x,y), CIRCLE_RADIUS, PURPLE_COLOR, CIRCLE_THICKNESS)
-		x,y = virtual_to_robot((x,y))
-		buttondict[str(buttonkey)]= {'x':x, 'y':y, 'z':DROP_Z}
-		pprint.pprint(buttondict)
-		cv2.imshow(imagename, scratchimage)
-		button = buttondict[str(buttonkey)]
-
-		move(button['x'], button['y'], button['z'])
-
-''' makes the window, displays the image, and adds the mouse callback to pick a button '''
-def pick_button(frame, winname, buttondict, buttonname):
-	global writedelay, increment
-	cv2.setMouseCallback(winname, on_button_identified, (winname, frame, buttondict, buttonname))
-	print "Click the %s button on the screen and then adjust Z axis using 'q' and 'e'" % buttonname
-	print "Press 'c' when calibrated"
-	cv2.imshow(winname, frame)
-	ch = cv2.waitKey()
-
-	while ch != ord('c')and ch != ord('v'):
-		if buttonname in buttondict:
-			if ch == ord('q'):
-				button = buttondict[buttonname]
-				button["z"] = button["z"] - increment
-				button = buttondict[buttonname]
-				direct_move(button['x'],button['y'],button['z'])
-											
-			elif ch == ord('e'):
-				button = buttondict[buttonname]
-				button["z"] = button["z"] + increment
-				button = buttondict[buttonname]
-				direct_move(button['x'],button['y'],button['z'])
-			
-			elif ch == ord('w'):
-				button = buttondict[buttonname]
-				button["y"] = button["y"] + increment
-				button = buttondict[buttonname]
-				direct_move(button['x'],button['y'],button['z'])
-				
-			elif ch == ord('s'):
-				button = buttondict[buttonname]
-				button["y"] = button["y"] - increment
-				button = buttondict[buttonname]
-				direct_move(button['x'],button['y'],button['z'])
-
-			elif ch == ord('a'):
-				button = buttondict[buttonname]
-				button["x"] = button["x"] - increment
-				button = buttondict[buttonname]
-				direct_move(button['x'],button['y'],button['z'])
-
-			elif ch == ord('d'):
-				button = buttondict[buttonname]
-				button["x"] = button["x"] + increment
-				button = buttondict[buttonname]
-				direct_move(button['x'],button['y'],button['z'])
-
-			elif ch == ord('p'):
-				print "dumping", buttondict
-				pickle.dump(buttondict, open("buttons.p", 'w'))
-
-			elif ch == ord('b'):
-				ch = cv2.waitKey()
-				if (str(unichr(ch)) in buttondict):
-					button =buttondict[str(unichr(ch))]
-					move(button['x'],button['y'],button['z'])
-				
-			elif str(unichr(ch)) in [str(x) for x in range(10)]:
-				increment = float(str(unichr(ch)))/ 10
-				print "Changing Step-Size to: ", increment
-
-				
-		ch = cv2.waitKey()
-
 def on_point_clicked(event, x, y, flag, param):
 	global DROP_Z, CURRENT_POINT
 	imagename, image = param
@@ -784,21 +466,11 @@ def calibrate_buttons():
 	if ch == ord('o'):
 		buttons = pickle.load(open("buttons.p", 'r'))
 	
-	#print "Is there an \"OK\" button? (y/n)"
-	#ch = cv2.waitKey()
-	#if ch == ord('y'):
-	#	pick_button(frame, WINDOW_NAME, buttons, "OK")
-	
-	#for number in range(0,10):
-	#	pick_button(frame, WINDOW_NAME, buttons, str(number))
-
-
 	cv2.setMouseCallback(WINDOW_NAME, on_point_clicked, (WINDOW_NAME, frame))
 	print "Click on the screen and use q,w,e,a,s,d to move the robot."
 	print "Press a number key (1-9) to change the size of the step for keyboard movements"
 	print "Type \"SetBUTTONNAME\" to set a button's location"
-	print "Type \"GotoBUTTONNAME\" to move to a previously defined button's location"
-	print "Press Escape when finished"		
+	print "Press ESC when finished"		
 	cv2.imshow(WINDOW_NAME, frame)
 	ch = cv2.waitKey()
 
@@ -897,42 +569,6 @@ def get_word(character_entered, word):
 	else:
 		return False
 
-def define_buttons():
-	global image
-	typedbuttons=raw_input("How many buttons? [10] ")
-	numbuttons = int(typedbuttons) if typedbuttons.isdigit() else 10
-	typedzero = raw_input("Is there a 0? [True] ")
-	haszero = False if typedzero in FALSELIST else True
-	print "haszero:%s"%haszero
-	typedok = raw_input("Is there an OK or Enter button? [False] ")
-	hasok = typedok in TRUELIST
-	print "hasok:%s"%hasok
-	
-	
-	buttoncoords={}
-	
-	if haszero:
-		startnum=0
-	else:
-		startnum=1
-		numbuttons+=1
-
-	workingimage = np.zeros(image.shape, np.uint8)
-	workingimage[:] = image
-	
-	for i in range(startnum,numbuttons):
-		print("Click on button %d:"%i)
-		pick_button(workingimage, "Click Button #%d"%i, buttoncoords, i)        
-		cv2.waitKey(0)
-		cv2.circle(workingimage, buttoncoords[str(i)], CIRCLE_RADIUS, GREEN_COLOR, CIRCLE_THICKNESS)
-		
-	if hasok:
-		print("Click on OK/Enter button:")
-		pick_button(workingimage, "Click OK", buttoncoords, 'OK')
-		cv2.waitKey(0)
-	
-	return buttoncoords
-
 
 
 def calibrate_camera(cam):
@@ -954,7 +590,7 @@ def calibrate_camera(cam):
 			cv.SaveImage("calib.jpg", cv.fromarray(vis))
 		if ch == ord('w'):
 			
-			image = cv2.resize(vis,  IMG_SIZE, fx=0.0, fy=0.0, interpolation=cv2.INTER_AREA)
+			image = cv2.resize(vis,  (IMG_SIZE, IMG_SIZE), fx=0.0, fy=0.0, interpolation=cv2.INTER_AREA)
 			
 			#detector = create_detector(image)
 			print "Calibrating..."
@@ -983,25 +619,25 @@ def setup_camera(camnum=0):
 	return cam
 
 def get_frame():
-	global perspective_xform, rotation_angle, shear_angle, orientation, cam
+	global perspective_xform, rotation_angle, shear_angle, orientation, cam, IMG_SIZE
 	if (cam == None):
 		setup_camera()
 
 	cam.read()
-	frame = cv2.resize(cam.read()[1],  IMG_SIZE, fx=0.0, fy=0.0, interpolation=cv2.INTER_AREA)
+	frame = cv2.resize(cam.read()[1], (IMG_SIZE, IMG_SIZE), fx=0.0, fy=0.0, interpolation=cv2.INTER_AREA)
 	
 	if orientation != 0:
-		rotation_matrix = cv2.getRotationMatrix2D((IMG_SIZE[0]/2, IMG_SIZE[1]/2),orientation, 1)
-		frame = cv2.warpAffine(frame, rotation_matrix, IMG_SIZE, frame, cv2.INTER_LINEAR, cv2.BORDER_TRANSPARENT)
+		rotation_matrix = cv2.getRotationMatrix2D((IMG_SIZE/2,IMG_SIZE/2),orientation, 1)
+		frame = cv2.warpAffine(frame, rotation_matrix,(IMG_SIZE, IMG_SIZE), frame, cv2.INTER_LINEAR, cv2.BORDER_TRANSPARENT)
 		
 	
 	if (perspective_xform != None):
-		frame = cv2.warpPerspective(frame, perspective_xform, IMG_SIZE)
+		frame = cv2.warpPerspective(frame, perspective_xform, (IMG_SIZE, IMG_SIZE))
 	
 	
 	if (rotation_angle != None):
 		rotation_matrix = cv2.getRotationMatrix2D((len(frame[0]) / 2, len(frame) / 2), rotation_angle, 1)
-		frame = cv2.warpAffine(frame, rotation_matrix, IMG_SIZE, frame, cv2.INTER_LINEAR, cv2.BORDER_TRANSPARENT)
+		frame = cv2.warpAffine(frame, rotation_matrix, (IMG_SIZE,IMG_SIZE), frame, cv2.INTER_LINEAR, cv2.BORDER_TRANSPARENT)
 
 
 	if (shear_angle != None):
@@ -1061,8 +697,8 @@ def brutekeys(pinlength, keys="0123456789", randomorder=False):
 
 	return allpossible
 
-def bruteloop(brutelist, buttondict, maxtries=None, actionlist=()):
-	global done_cracking
+def bruteloop(brutelist, buttondict, maxtries=None, actionlist=(), startpoint = 0):
+	global done_cracking, cooldown_time, attempts_per_cooldown, cooldown
 	"""Try to push the buttons for each possible PIN in the given list
 		
 		If an actionlist is given, function in second position will be called
@@ -1082,9 +718,12 @@ def bruteloop(brutelist, buttondict, maxtries=None, actionlist=()):
 	tries=0
 	persister=None
 	brutecontinue=True
-			
-	for pin in brutelist:
+
+	i = startpoint
+	while i < len(brutelist)and not done_cracking and tries < maxtries:
+		pin = brutelist[i]
 		print "===Pushing %s:"%(pin,)
+		print "Press ESC to pause"
 					#for number in pin:
 					#print "pushing %s"%number
 					#push(toIdentifier(number))
@@ -1092,13 +731,13 @@ def bruteloop(brutelist, buttondict, maxtries=None, actionlist=()):
 				
 				#push(toIdentifier('Z'))
 		tries+=1
-		if (tries % 5 == 0):
+		if (cooldown and tries % attempts_per_cooldown == 0 ):
 			move(0,0,0)
 			time.sleep(1)
 			coordinate = buttondict['8']
 			move(coordinate['x'], coordinate['y'], coordinate['z'])
 			move(0,0,0)
-			for i in range(30):
+			for i in range(cooldown_time):
 				time.sleep(1)
 							
 		for modulo,func in actionlist:
@@ -1106,9 +745,25 @@ def bruteloop(brutelist, buttondict, maxtries=None, actionlist=()):
 				returnvalue=func(tries,pin,persister)
 				if returnvalue is not None:
 					brutecontinue, persister = returnvalue
-		if tries>=maxtries or not brutecontinue or done_cracking:
-			break
-				
+		ch = cv2.waitKey(1)
+		if ch == 27:
+			print "Press ESC to resume"
+			print "Type 'quit' to exit"
+			ch = cv2.waitKey()
+			while True:
+				if ch == 27:
+					print "Resuming"
+					break
+				elif get_word(ch, "quit"):
+					print "Quitting"
+					done_cracking = True
+					break
+				ch = cv2.waitKey()
+			
+			
+			
+		i += 1
+		
 	move(0,0,0)
 
 
@@ -1117,9 +772,10 @@ def enterpin(pin, buttondict):
 	global writedelay, additional_detectors, done_cracking, correct_pin, detector
 	ok_required = True
 	for number in pin:
-		coordinate = buttondict[str(number)]
-		move(coordinate['x'], coordinate['y'], coordinate['z'])
-		time.sleep(writedelay)
+		if (number in buttondict):
+			coordinate = buttondict[str(number)]
+			move(coordinate['x'], coordinate['y'], coordinate['z'])
+			time.sleep(writedelay)
 		
 	if (ok_required):
 		coordinate = buttondict["OK"]
@@ -1167,7 +823,7 @@ def find_drop():
 	
 
 def main(args):
-	global display, image, cam, shear_angle, rotation_angle, perspective_xform, orientation, detector
+	global display, image, cam, shear_angle, rotation_angle, perspective_xform, orientation, detector, IMG_SIZE
 	
 	parser = argparse.ArgumentParser(description='This program controls a brute-forcing robot. Load arguments from a file with @FILENAME', fromfile_prefix_chars='@')
 	#parser.add_argument('-c','--config', help='NI! loads a config file')
@@ -1233,23 +889,23 @@ def main(args):
 
 	move(0,0,4)
 
-	keys = brutekeys(4, randomorder=False)
+	if args.pinfile != None:
+		key = load_pinfile(args["pinfile"])
+	else:
+		keys = load_pinfile("pins.txt")
+		#keys = brutekeys(4, randomorder=False)
+
 	bruteloop(keys,buttons, maxtries=10000)
 
 	cv2.destroyAllWindows()
 	return 0
-	show(image, "fixed image")
 
-	# run until ESCAPE is pressed
-	while True:
-		pick_buttons()
-		if cv2.waitKey(10)== 27:
-			break
-
-	buttons=define_buttons()
-	pprint.pprint(buttons)
-		
-	cv2.destroyAllWindows()
+def load_pinfile(pinfile_name):
+	keys = list()
+	pinfile = open(pinfile_name, 'r')
+	for line in pinfile:
+		keys.append(line)
+	return keys
 		
 if __name__ == "__main__":
 	main(sys.argv)
