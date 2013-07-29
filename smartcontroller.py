@@ -34,6 +34,7 @@ GREEN_COLOR=(0,255,0)
 PURPLE_COLOR=(255,0,255)
 
 DROP_Z = 0
+CURRENT_POINT = {'x':0.0, 'y':0.0, 'z':4.0}
 
 WINDOW_NAME = "R2B2"
 
@@ -734,17 +735,27 @@ def pick_button(frame, winname, buttondict, buttonname):
 				
 			elif str(unichr(ch)) in [str(x) for x in range(10)]:
 				increment = float(str(unichr(ch)))/ 10
-				print float(str(unichr(ch)))
-				print increment
-			else:
-				print ch
-			
+				print "Changing Step-Size to: ", increment
+
 				
 		ch = cv2.waitKey()
 
+def on_point_clicked(event, x, y, flag, param):
+	global DROP_Z, CURRENT_POINT
+	imagename, image = param
+
+	if event == cv2.EVENT_LBUTTONUP:
+		print x,y
+		scratchimage = np.zeros(image.shape, np.uint8)
+		scratchimage[:] = image
+		cv2.circle(scratchimage, (x,y), CIRCLE_RADIUS, PURPLE_COLOR, CIRCLE_THICKNESS)
+		x,y = virtual_to_robot((x,y))
+		CURRENT_POINT = {'x':x, 'y':y, 'z':DROP_Z}
+		cv2.imshow(imagename, scratchimage)
+		move(CURRENT_POINT['x'], CURRENT_POINT['y'], CURRENT_POINT['z'])
 		
 def calibrate_buttons():
-	global cam, detector
+	global cam, detector, increment, writedelay
 	
 	frame =get_frame()
 	cv2.imshow(WINDOW_NAME, frame)
@@ -773,17 +784,117 @@ def calibrate_buttons():
 	if ch == ord('o'):
 		buttons = pickle.load(open("buttons.p", 'r'))
 	
-	print "Is there an \"OK\" button? (y/n)"
-	ch = cv2.waitKey()
-	if ch == ord('y'):
-		pick_button(frame, WINDOW_NAME, buttons, "OK")
+	#print "Is there an \"OK\" button? (y/n)"
+	#ch = cv2.waitKey()
+	#if ch == ord('y'):
+	#	pick_button(frame, WINDOW_NAME, buttons, "OK")
 	
-	for number in range(0,10):
-		pick_button(frame, WINDOW_NAME, buttons, str(number))
+	#for number in range(0,10):
+	#	pick_button(frame, WINDOW_NAME, buttons, str(number))
+
+
+	cv2.setMouseCallback(WINDOW_NAME, on_point_clicked, (WINDOW_NAME, frame))
+	print "Click on the screen and use q,w,e,a,s,d to move the robot."
+	print "Press a number key (1-9) to change the size of the step for keyboard movements"
+	print "Type \"SetBUTTONNAME\" to set a button's location"
+	print "Press Escape when finished"		
+	cv2.imshow(WINDOW_NAME, frame)
+	ch = cv2.waitKey()
+
+	while ch != ord('c')and ch != ord('v'):
+		if ch == ord('q'):
+			CURRENT_POINT['z'] -= increment
+			direct_move(CURRENT_POINT['x'], CURRENT_POINT['y'], CURRENT_POINT['z'])
+										
+		elif ch == ord('e'):
+			CURRENT_POINT['z'] += increment
+			direct_move(CURRENT_POINT['x'], CURRENT_POINT['y'], CURRENT_POINT['z'])
+	
+		elif ch == ord('w'):
+			CURRENT_POINT['y'] += increment
+			direct_move(CURRENT_POINT['x'], CURRENT_POINT['y'], CURRENT_POINT['z'])
+							
+		elif ch == ord('s'):
+			CURRENT_POINT['y'] -= increment
+			direct_move(CURRENT_POINT['x'], CURRENT_POINT['y'], CURRENT_POINT['z'])
+			
+		elif ch == ord('a'):
+			CURRENT_POINT['x'] -= increment
+			direct_move(CURRENT_POINT['x'], CURRENT_POINT['y'], CURRENT_POINT['z'])
+
+		elif ch == ord('d'):
+			CURRENT_POINT['x'] += increment
+			direct_move(CURRENT_POINT['x'], CURRENT_POINT['y'], CURRENT_POINT['z'])
+							
+		elif ch == ord('p'):
+			print "dumping", buttons
+			pickle.dump(buttons, open("buttons.p", 'w'))
+
+		elif str(unichr(ch)) in [str(x) for x in range(10)]:
+			increment = float(str(unichr(ch)))/ 10
+			print "Changing Step-Size to: ", increment
+
+		elif get_word(ch, "Set"):
+			set_button(buttons)
+			
+		elif get_word(ch, "Goto"):
+			goto_button(buttons)
+			
+		elif ch == 27:
+			break
+		ch = cv2.waitKey()
+
 
 	pickle.dump(buttons, open("buttons.p", 'w'))
 				
 	return buttons
+
+def goto_button(buttons):
+	global CURRENT_POINT
+
+	print "Enter the name of the button to go to (press 'Return' when finished)"
+	button_name = get_user_word()
+
+	if  button_name in buttons:
+		CURRENT_POINT = buttons[button_name]
+		move(CURRENT_POINT['x'], CURRENT_POINT['y'], CURRENT_POINT['z'])
+	else:
+		print "No such button found"
+	
+	
+	
+def set_button(buttons):
+        global CURRENT_POINT
+        
+        print "Enter the name of the button to set (press 'Return' when finished)"
+        button_name = get_user_word()
+        
+        print "Set %s to %s" %(button_name, CURRENT_POINT)
+        buttons[button_name] = CURRENT_POINT
+
+def get_user_word(terminal_character="\r"):
+	word = ""
+	ch =cv2.waitKey()
+	while ch != ord(terminal_character):
+		word += str(unichr(ch))
+		ch = cv2.waitKey()
+
+	return word
+
+''' this function tries to use cv2.waitKey to get words entered by a
+user instead of just a single character. It assumes the user has
+already entered the character contained by character_entered, and
+begins by checking if that is the first character in word. If it is it
+continues by querying for additional input, otherwise it returns
+false.'''
+def get_word(character_entered, word):
+	if character_entered == ord(word[0]):
+		for char in word[1:]:
+			if cv2.waitKey() != ord(char):
+				return False
+		return True
+	else:
+		return False
 
 def define_buttons():
 	global image
