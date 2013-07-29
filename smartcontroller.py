@@ -797,6 +797,7 @@ def calibrate_buttons():
 	print "Click on the screen and use q,w,e,a,s,d to move the robot."
 	print "Press a number key (1-9) to change the size of the step for keyboard movements"
 	print "Type \"SetBUTTONNAME\" to set a button's location"
+	print "Type \"GotoBUTTONNAME\" to move to a previously defined button's location"
 	print "Press Escape when finished"		
 	cv2.imshow(WINDOW_NAME, frame)
 	ch = cv2.waitKey()
