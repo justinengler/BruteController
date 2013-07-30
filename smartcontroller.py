@@ -876,7 +876,7 @@ def main(args):
 	parser.add_argument('-p','--positions',help='NI! import a saved positions file')
 	parser.add_argument('-r','--resume',help='NI! resume a previous run')
 	parser.add_argument('-s','--serialdevice',help='Serial device (Mac/Linux) or COM port like "COMx" (Windows)', default=DEFAULTSERIALPORT)
-	parser.add_argument('-v','--videonum',help='NI! Video capture device. "0" is the first, default value')
+	parser.add_argument('-v','--videonum',help='Video capture device. "0" is the first, default value', default=1)
 	parser.add_argument('-k','--keyconfig', help='NI! Use keyboard configuration, not camera configuration', action="store_true")
 	parser.add_argument('-n','--nodetect', help='NI! Do not attempt to detect a finished run.  Runs until the series is completed', action="store_true")
 	parser.add_argument('-f','--pinfile', help='NI! Load brute force attempts from a file')
@@ -895,7 +895,6 @@ def main(args):
 	
 	
 	newreversez=bool(args.reversez)
-	print newreversez
 	if args.reversez is None:
 		print "User test here"
 		print "make sure to set true or false to newreversez"
@@ -907,7 +906,7 @@ def main(args):
 	serialsetup(args.serialdevice)
 	move(0,0,5)
 
-	cam = setup_camera()
+	cam = setup_camera(int(args.videonum))
 
 	cv2.namedWindow(WINDOW_NAME, cv2.WINDOW_AUTOSIZE)
 	print "Press a key to indicate the rotation of the camera: 'q' = viewing from left, 'w' = viewing from top, 'e' = viewing from right,'r' = viewing from bottom"
