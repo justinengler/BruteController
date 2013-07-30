@@ -45,6 +45,9 @@ TRUELIST = ("1","True","true","TRUE","t","T", "yes", "Yes", "YES")
 
 DONE = False
 
+drag_start=False
+selection = None
+
 cooldown = False
 cooldown_time = 0
 attempts_per_cooldown = 0
@@ -60,7 +63,6 @@ detector = None
 additional_detectors = list()
 done_cracking = False
 correct_pin = None
-region = None
 increment = 0.1
 reversez=None
 display = True
@@ -71,7 +73,9 @@ ser = None
 
 FIRSTCHAR=ord('a')
 
+
 SERIALPORT='/dev/tty.usbmodem1411'
+
 
 writedelay=.5
 
@@ -373,7 +377,7 @@ def good_transform (img, goal):
 
 ''' creates the detector and trains it on features of the img '''
 def create_detector(img):
-	global region
+	global selection
 		
 	surfDetector = cv2.FeatureDetector_create("SURF")
 	surfDescriptorExtractor = cv2.DescriptorExtractor_create("SURF")
@@ -381,8 +385,8 @@ def create_detector(img):
 	imgg = cv2.cvtColor(img,cv2.COLOR_BGR2GRAY)
 
 	
-	if (region != None):
-		imgg = imgg[region[0]:region[2], region[1]:region[3]]
+	if (selection != None):
+		imgg = imgg[selection[0]:selection[2], selection[1]:selection[3]]
 
 			
 	keypoints = surfDetector.detect(imgg)
@@ -399,15 +403,15 @@ def create_detector(img):
 ''' returns True if the current image has too many feature mismatches
 compared to the image used to train the detector'''
 def detect_change(cur_img, mismatch_threshold, detector_to_use):
-	global region
+	global selection
 	DIST_THRESHOLD = 0.1
 
 	surfDetector = cv2.FeatureDetector_create("SURF")
 	surfDescriptorExtractor = cv2.DescriptorExtractor_create("SURF")
 
 	cur_imgg = cv2.cvtColor(cur_img,cv2.COLOR_BGR2GRAY)
-	if (region != None):
-		cur_imgg = cur_imgg[region[0]:region[2], region[1]:region[3]]
+	if (selection != None):
+		cur_imgg = cur_imgg[selection[0]:selection[2], s[1]:selection[3]]
 	
 	cur_keypoints = surfDetector.detect(cur_imgg)
 	cur_keypoints, cur_descriptors = surfDescriptorExtractor.compute(cur_imgg,cur_keypoints)
@@ -424,6 +428,43 @@ def detect_change(cur_img, mismatch_threshold, detector_to_use):
 			
 	return mismatches > mismatch_threshold
 
+def selection_drag(event, x, y, flags, param):
+	global drag_start, selection
+
+	selection_img = np.copy(param)
+	if event == cv.CV_EVENT_LBUTTONDOWN:
+	    drag_start = (x, y)
+	    selection = (x,y,1,1)
+	if event == cv.CV_EVENT_LBUTTONUP:
+	    drag_start = None
+	    selection = None
+	if drag_start:
+	    xmin = min(x, drag_start[0])
+	    ymin = min(y, drag_start[1])
+	    xmax = max(x,drag_start[0])
+	    ymax = max(y, drag_start[1])
+	    selection = (xmin, ymin, xmax - xmin, ymax - ymin)
+	    cv2.rectangle(selection_img, (selection[0],selection[1]), (selection[0] + selection[2], selection[1] + selection[3]), (0, 255, 0), 2)
+	    cv2.imshow("R2B2", selection_img)
+
+
+def get_focus_area(frame):
+	global selection, drag_start,detector
+	
+	print "Drag to select the area of the image to focus on for changes to avoid false positive unlocks"
+	print "(the box the PIN appears in is recommended)"
+	print "Press 'w' when this is satisfactory"
+
+	selection_img = np.copy(frame)
+
+	cv2.setMouseCallback(WINDOW_NAME, selection_drag, (selection_img))
+	ch =cv2.waitKey(5)
+	while ch != ord('w'):
+		ch =cv2.waitKey(5)
+
+	detector = create_detector      (frame)
+	
+
 def on_point_clicked(event, x, y, flag, param):
 	global DROP_Z, CURRENT_POINT
 	imagename, image = param
@@ -437,6 +478,7 @@ def on_point_clicked(event, x, y, flag, param):
 		CURRENT_POINT = {'x':x, 'y':y, 'z':DROP_Z}
 		cv2.imshow(imagename, scratchimage)
 		move(CURRENT_POINT['x'], CURRENT_POINT['y'], CURRENT_POINT['z'])
+	
 		
 def calibrate_buttons():
 	global cam, detector, increment, writedelay
@@ -451,11 +493,12 @@ def calibrate_buttons():
 		ch = cv2.waitKey()
 
 	print "Calibration Beginning"
-	
-	detector = create_detector(get_frame())
 
-	frame =get_frame()
-	
+	get_focus_area(frame)
+
+	cv2.destroyWindow("R2B2")
+	cv2.namedWindow("R2B2", cv2.WINDOW_AUTOSIZE)
+
 	cv2.imshow(WINDOW_NAME, frame)
 		
 	
@@ -472,7 +515,7 @@ def calibrate_buttons():
 	print "Click on the screen and use q,w,e,a,s,d to move the robot."
 	print "Press a number key (1-9) to change the size of the step for keyboard movements"
 	print "Type \"SetBUTTONNAME\" to set a button's location"
-	print "Press ESC when finished"		
+	print "Press ESC when finished"         
 	cv2.imshow(WINDOW_NAME, frame)
 	ch = cv2.waitKey()
 
@@ -539,13 +582,13 @@ def goto_button(buttons):
 	
 	
 def set_button(buttons):
-        global CURRENT_POINT
-        
-        print "Enter the name of the button to set (press 'Return' when finished)"
-        button_name = get_user_word()
-        
-        print "Set %s to %s" %(button_name, CURRENT_POINT)
-        buttons[button_name] = CURRENT_POINT
+	global CURRENT_POINT
+	
+	print "Enter the name of the button to set (press 'Return' when finished)"
+	button_name = get_user_word()
+	
+	print "Set %s to %s" %(button_name, CURRENT_POINT)
+	buttons[button_name] = CURRENT_POINT
 
 def get_user_word(terminal_character="\r"):
 	word = ""
