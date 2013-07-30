@@ -74,7 +74,7 @@ ser = None
 FIRSTCHAR=ord('a')
 
 
-SERIALPORT='COM4'
+DEFAULTSERIALPORT='COM4'
 
 
 writedelay=.5
@@ -82,9 +82,9 @@ writedelay=.5
 """If True, the input and output to serial are shown on the console"""
 SERIALTOCONSOLE=False
 
-def serialsetup():
+def serialsetup(serialport):
 	global ser
-	ser = serial.Serial(SERIALPORT, 57600, timeout=1)
+	ser = serial.Serial(serialport, 57600, timeout=1)
 	ser.flushInput()
 	ser.flushOutput()
 	readuntil(ser,'>')
@@ -870,12 +870,12 @@ def find_drop():
 	
 
 def main(args):
-	global display, image, cam, shear_angle, rotation_angle, perspective_xform, orientation, detector, IMG_SIZE, reversez, SERIALPORT
+	global display, image, cam, shear_angle, rotation_angle, perspective_xform, orientation, detector, IMG_SIZE, reversez
 	
 	parser = argparse.ArgumentParser(description='This program controls a brute-forcing robot. Load arguments from a file with @FILENAME', fromfile_prefix_chars='@')
 	parser.add_argument('-p','--positions',help='NI! import a saved positions file')
 	parser.add_argument('-r','--resume',help='NI! resume a previous run')
-	parser.add_argument('-s','--serialdevice',help='Serial device (Mac/Linux) or COM port like "COMx" (Windows)')
+	parser.add_argument('-s','--serialdevice',help='Serial device (Mac/Linux) or COM port like "COMx" (Windows)', default=DEFAULTSERIALPORT)
 	parser.add_argument('-v','--videonum',help='NI! Video capture device. "0" is the first, default value')
 	parser.add_argument('-k','--keyconfig', help='NI! Use keyboard configuration, not camera configuration', action="store_true")
 	parser.add_argument('-n','--nodetect', help='NI! Do not attempt to detect a finished run.  Runs until the series is completed', action="store_true")
@@ -887,9 +887,6 @@ def main(args):
  
 	## show values ##
 	print args
- 
- 	if args.serialdevice is not None:
- 		SERIALPORT=args.serialdevice
  	
  
 	#exit()
@@ -907,7 +904,7 @@ def main(args):
 
 
 	# move robot out of the way
-	serialsetup()
+	serialsetup(args.serialdevice)
 	move(0,0,5)
 
 	cam = setup_camera()
