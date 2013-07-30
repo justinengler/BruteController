@@ -74,7 +74,7 @@ ser = None
 FIRSTCHAR=ord('a')
 
 
-SERIALPORT='/dev/tty.usbmodem1411'
+SERIALPORT='COM4'
 
 
 writedelay=.5
@@ -870,13 +870,12 @@ def find_drop():
 	
 
 def main(args):
-	global display, image, cam, shear_angle, rotation_angle, perspective_xform, orientation, detector, IMG_SIZE, reversez
+	global display, image, cam, shear_angle, rotation_angle, perspective_xform, orientation, detector, IMG_SIZE, reversez, SERIALPORT
 	
 	parser = argparse.ArgumentParser(description='This program controls a brute-forcing robot. Load arguments from a file with @FILENAME', fromfile_prefix_chars='@')
-	#parser.add_argument('-c','--config', help='NI! loads a config file')
 	parser.add_argument('-p','--positions',help='NI! import a saved positions file')
 	parser.add_argument('-r','--resume',help='NI! resume a previous run')
-	parser.add_argument('-s','--serialdevice',help='NI! serial device (Mac/Linux) or COM port like "COMx" (Windows)')
+	parser.add_argument('-s','--serialdevice',help='Serial device (Mac/Linux) or COM port like "COMx" (Windows)')
 	parser.add_argument('-v','--videonum',help='NI! Video capture device. "0" is the first, default value')
 	parser.add_argument('-k','--keyconfig', help='NI! Use keyboard configuration, not camera configuration', action="store_true")
 	parser.add_argument('-n','--nodetect', help='NI! Do not attempt to detect a finished run.  Runs until the series is completed', action="store_true")
@@ -888,6 +887,10 @@ def main(args):
  
 	## show values ##
 	print args
+ 
+ 	if args.serialdevice is not None:
+ 		SERIALPORT=args.serialdevice
+ 	
  
 	#exit()
 	
