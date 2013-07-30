@@ -71,7 +71,7 @@ ser = None
 
 FIRSTCHAR=ord('a')
 
-SERIALPORT="COM4" #'/dev/tty.usbmodem1411'
+SERIALPORT="COM3" #'/dev/tty.usbmodem1411'
 
 writedelay=.5
 
