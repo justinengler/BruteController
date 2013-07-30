@@ -62,14 +62,16 @@ done_cracking = False
 correct_pin = None
 region = None
 increment = 0.1
+reversez=None
 display = True
+
 
 
 ser = None
 
 FIRSTCHAR=ord('a')
 
-SERIALPORT="COM4" #'/dev/tty.usbmodem1411'
+SERIALPORT='/dev/tty.usbmodem1411'
 
 writedelay=.5
 
@@ -680,9 +682,11 @@ def write(output):
 
 def move(x,y,z):
 	"""Move to the coordinates given"""
+	z=-z if reversez else z
 	write("MV X%s Y%s Z%s;"%(x,y,z))
 
 def direct_move(x,y,z):
+	z=-z if reversez else z
 	write("DM X%s Y%s Z%s;"% (x,y,z))
 
 def brutekeys(pinlength, keys="0123456789", randomorder=False):
@@ -823,7 +827,7 @@ def find_drop():
 	
 
 def main(args):
-	global display, image, cam, shear_angle, rotation_angle, perspective_xform, orientation, detector, IMG_SIZE
+	global display, image, cam, shear_angle, rotation_angle, perspective_xform, orientation, detector, IMG_SIZE, reversez
 	
 	parser = argparse.ArgumentParser(description='This program controls a brute-forcing robot. Load arguments from a file with @FILENAME', fromfile_prefix_chars='@')
 	#parser.add_argument('-c','--config', help='NI! loads a config file')
@@ -835,7 +839,7 @@ def main(args):
 	parser.add_argument('-n','--nodetect', help='NI! Do not attempt to detect a finished run.  Runs until the series is completed', action="store_true")
 	parser.add_argument('-f','--pinfile', help='NI! Load brute force attempts from a file')
 	parser.add_argument('-a','--android', help='NI! Android mode.  Waits 30 seconds each 5 guesses, then presses ok', action="store_true")
-	
+	parser.add_argument('-z','--reversez', help='Reverse the Z axis', action="store_true")
 	
 	args = parser.parse_args()
  
@@ -845,11 +849,20 @@ def main(args):
 	#exit()
 	
 	display = True
+	
+	
+	newreversez=bool(args.reversez)
+	print newreversez
+	if args.reversez is None:
+		print "User test here"
+		print "make sure to set true or false to newreversez"
+	
+	reversez=newreversez
+
 
 	# move robot out of the way
 	serialsetup()
 	move(0,0,5)
-
 
 	cam = setup_camera()
 
