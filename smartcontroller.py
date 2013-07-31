@@ -256,6 +256,26 @@ def virtual_to_robot(point):
 		
 	return x,y
 
+def point_in_box(point, box):
+	x,y =point
+	bx,by,bw,bh = box
+	return x>= bx and x <= (bx+bw)and y>=by and y<=(by+bh)
+
+def select_landmark(event, x, y, flag, param):
+	frame, landmarks,selected_landmarks  = param
+	in_box = False
+	if event == cv.CV_EVENT_LBUTTONDOWN:
+		for mark in landmarks:
+			if point_in_box((x,y),mark):
+				in_box = True
+				if (mark[0] + mark[2]/2, mark[1] + mark[3]/2)not in selected_landmarks:
+					selected_landmarks.append((mark[0] + mark[2]/2, mark[1] + mark[3]/2))
+				break
+
+		if not in_box:
+			selected_landmarks.append((x,y))
+
+
 
 ''' static method, src and dst should be tweaked once the final frame
 is built to get a constant perspective shift, since the camera will
@@ -313,9 +333,6 @@ def perspective_shift(img):
 			print square
 			return square
 			
-		def rectangularity (points):
-			return abs(points[0][0] - points[2][0])+ abs(points[0][1] - points[1][1]) + abs(points[1][0] - points[3][0]) + abs(points[2][0] - points[3][0])
-		
 		def shift(square, img):
 			src =np.array(square, np.float32)
 			print(src)
@@ -328,33 +345,26 @@ def perspective_shift(img):
 		
 		if len(landmarks) == 4:
 			landmarks = sort_to_square(landmarks)
+			print landmarks
 			shifted_img, perspective_xform = shift(landmarks, img)
-		elif len(landmarks) > 4:
-			perms = list(itertools.combinations(range(len(landmarks)), 4))
-			potentials = list()                
-			for perm in perms:
-				print perm
-				chosen = (landmarks[perm[0]], landmarks[perm[1]], landmarks[perm[2]],landmarks[perm[3]])
-				chosen = sort_to_square(chosen)
-				unchosen = [p for p in filter(lambda x: x not in chosen, landmarks)]
-
-				if (len(in_square(chosen, unchosen))== 0):
-					potentials.append((rectangularity(chosen),chosen))
-					
-				 #       print "RECT:", rectangularity(chosen)
-				 #       tempimg = np.copy(img)
-				 #       for point in chosen:
-				 #               cv2.circle(tempimg, (int(point[0]), int(point[1])), 5, GREEN_COLOR, 3)
-				 #       show(tempimg, "contours")
-
+		elif len(landmarks) != 4:
+			if len(landmarks) > 4:
+				print "More than 4 marks found, please select the four calibration marks or press Esc"
+			else:
+				print "Fewer than 4 marks found, please select the four calibration marks or press Esc"
+				
+			correct_landmarks =list()
 			
+			cv2.setMouseCallback(WINDOW_NAME, select_landmark, (img, contour_boxes,correct_landmarks))
+			ch = cv2.waitKey(5)
+			while len(correct_landmarks)< 4 and ch != 23:
+				ch = cv2.waitKey(5)
 
-			potentials = [x[1] for x in sorted(potentials)]
-			for group in potentials:
-				shifted_img, perspective_xform = shift(group, img)
-				if good_transform(shifted_img, ideal_positions):
-					print "good"
-					break
+			landmarks = sort_to_square(correct_landmarks)
+			print landmarks
+			shifted_img, perspective_xform = shift(landmarks, img)
+			break
+
 		else:
 			cv2.imshow(WINDOW_NAME, img)
 		
@@ -389,7 +399,7 @@ def create_detector(img):
 
 	
 	if (selection != None):
-		imgg = imgg[selection[0]:selection[2], selection[1]:selection[3]]
+		imgg = imgg[selection[1]:selection[1]+selection[3], selection[0]:selection[0] +selection[0]]
 
 			
 	keypoints = surfDetector.detect(imgg)
@@ -414,20 +424,22 @@ def detect_change(cur_img, mismatch_threshold, detector_to_use):
 
 	cur_imgg = cv2.cvtColor(cur_img,cv2.COLOR_BGR2GRAY)
 	if (selection != None):
-		cur_imgg = cur_imgg[selection[0]:selection[2], s[1]:selection[3]]
+		cur_imgg = cur_imgg[selection[1]:selection[1]+selection[3], selection[0]:selection[0] +selection[0]]
+
 	
 	cur_keypoints = surfDetector.detect(cur_imgg)
 	cur_keypoints, cur_descriptors = surfDescriptorExtractor.compute(cur_imgg,cur_keypoints)
 
 	mismatches = 0
 	 
-	for h,des in enumerate(cur_descriptors):
-		des = np.asmatrix(des,np.float32)
-		retval, results, neigh_resp, dists = detector_to_use.find_nearest(des,1)
-		res,dist =  int(results[0][0]),dists[0][0]
+	if cur_descriptors != None:
+		for h,des in enumerate(cur_descriptors):
+			des = np.asmatrix(des,np.float32)
+			retval, results, neigh_resp, dists = detector_to_use.find_nearest(des,1)
+			res,dist =  int(results[0][0]),dists[0][0]
 
-		if dist > DIST_THRESHOLD:
-			mismatches += 1
+			if dist > DIST_THRESHOLD:
+				mismatches += 1
 			
 	return mismatches > mismatch_threshold
 
@@ -864,8 +876,6 @@ def enterpin(pin, buttondict):
 		if (change_detected):
 			print "CHANGE DETECTED!"
 			print "Is it unlocked? (y/n)"
-			cv2.namedWindow("Change", cv2.WINDOW_AUTOSIZE)
-			cv2.imshow(WINDOW_NAME, frame)
 			ch = cv2.waitKey()
 			if ch == ord("n"):
 				additional_detectors.append(create_detector(frame))
