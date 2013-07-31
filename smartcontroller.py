@@ -81,7 +81,7 @@ DEFAULTSERIALPORT='COM4'
 writedelay=.5
 
 """If True, the input and output to serial are shown on the console"""
-SERIALTOCONSOLE=True
+SERIALTOCONSOLE=False
 
 def serialsetup(serialport,isreverse):
 	global ser
@@ -566,7 +566,7 @@ def calibrate_buttons(keyboardonly=False, ):
 		ch = cv2.waitKey()
 
 
-	pickle.dump(buttons, open("buttons.p", 'w'))
+	pickle.dump(buttons, open("buttons-auto.p", 'w'))
 				
 	return buttons
 
@@ -590,8 +590,10 @@ def set_button(buttons):
 	print "Enter the name of the button to set (press 'Return' when finished)"
 	button_name = get_user_word()
 	
-	print "Set %s to %s" %(button_name, CURRENT_POINT)
-	buttons[button_name] = CURRENT_POINT
+	newpoint=dict(CURRENT_POINT)
+	
+	print "Set %s to %s" %(button_name, newpoint)
+	buttons[button_name] = newpoint
 
 def get_user_word(terminal_character="\r"):
 	word = ""
