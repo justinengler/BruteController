@@ -21,7 +21,8 @@ V_CARD_WIDTH= ideal_positions[1][0] - ideal_positions[0][0]
 V_CARD_HEIGHT = ideal_positions[2][1] - ideal_positions[0][1]
 V_CARD_CENTER = (ideal_positions[0][0] + (V_CARD_WIDTH/2), ideal_positions[0][1] + (V_CARD_HEIGHT/2))
 
-real_positions = [(-2.3, 4.7, -2.2), (1.5,3., -2.1), (-2.3,-2.8,-1.8),(1.5,-2.8,-1.8)]
+#real_positions = [(-2.3, 4.7, -2.2), (1.5,3., -2.1), (-2.3,-2.8,-1.8),(1.5,-2.8,-1.8)]
+real_positions =[(-2.34,3.74,-2.5),(1.16,3.74,-2.3),(-2.34,-3.56,-2.4),(1.16,-3.26,-2.2)]
 REAL_CARD_WIDTH = abs(real_positions[0][0] - real_positions[1][0])#3.6
 REAL_CARD_HEIGHT = abs(real_positions[0][1] - real_positions[3][1]) #7.5
 
@@ -509,6 +510,8 @@ def calibrate_buttons(keyboardonly=False, ):
 
 	print "Calibration Beginning"
 
+	get_frame()
+	frame = get_frame()
 	get_focus_area(frame)
 
 	cv2.destroyWindow("R2B2")
@@ -938,7 +941,7 @@ def main(args):
 
 	# move robot out of the way
 	serialsetup(args.serialdevice, args.reversez)
-	move(0,0,0)
+	move(0,0,3)
 
 	if not args.keyconfig:
 		cam = setup_camera(int(args.videonum))
