@@ -602,9 +602,9 @@ def set_button(buttons):
 	print "Enter the name of the button to set (press 'Return' when finished)"
 	button_name = get_user_word()
 	
-	print "Set %s to %s" %(button_name, CURRENT_POINT)
-	buttons[button_name] = CURRENT_POINT
-
+	buttons[button_name] = {'x':CURRENT_POINT['x'], 'y':CURRENT_POINT['y'], 'z':CURRENT_POINT['z']}
+	print "Set %s to %s" %(button_name, buttons[button_name])
+	
 def get_user_word(terminal_character="\r"):
 	word = ""
 	ch =cv2.waitKey()
