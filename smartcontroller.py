@@ -43,6 +43,8 @@ IMG_SIZE = 480
 FALSELIST = ("0","False","false","FALSE","f","F","no","No", "NO")
 TRUELIST = ("1","True","true","TRUE","t","T", "yes", "Yes", "YES")
 
+DUMMYIMAGE = "pinpad.jpg"
+
 DONE = False
 
 drag_start=False
@@ -64,7 +66,6 @@ additional_detectors = list()
 done_cracking = False
 correct_pin = None
 increment = 0.1
-reversez=None
 display = True
 
 
@@ -80,14 +81,16 @@ DEFAULTSERIALPORT='COM4'
 writedelay=.5
 
 """If True, the input and output to serial are shown on the console"""
-SERIALTOCONSOLE=False
+SERIALTOCONSOLE=True
 
-def serialsetup(serialport):
+def serialsetup(serialport,isreverse):
 	global ser
 	ser = serial.Serial(serialport, 57600, timeout=1)
 	ser.flushInput()
 	ser.flushOutput()
 	readuntil(ser,'>')
+	if isreverse:
+		write("RV;")
 
 
 # potentially useful for looking for characters
@@ -480,7 +483,7 @@ def on_point_clicked(event, x, y, flag, param):
 		move(CURRENT_POINT['x'], CURRENT_POINT['y'], CURRENT_POINT['z'])
 	
 		
-def calibrate_buttons():
+def calibrate_buttons(keyboardonly=False, ):
 	global cam, detector, increment, writedelay
 	
 	frame =get_frame()
@@ -506,7 +509,7 @@ def calibrate_buttons():
 	
 	buttons = {}
 
-	print "Press 'o'  to load a preconfigured button layout"
+	print "Press 'o'  to load a preconfigured button layout.  Any other key to continue."
 	ch = cv2.waitKey()
 	if ch == ord('o'):
 		buttons = pickle.load(open("buttons.p", 'r'))
@@ -619,6 +622,24 @@ def get_word(character_entered, word):
 def calibrate_camera(cam):
 	global orientation
 	
+	cv2.namedWindow(WINDOW_NAME, cv2.WINDOW_AUTOSIZE)
+	print "Press a key to indicate the rotation of the camera: 'q' = viewing from left, 'w' = viewing from top, 'e' = viewing from right,'r' = viewing from bottom"
+	while True:
+		cv2.imshow(WINDOW_NAME, get_frame())
+		ch = cv2.waitKey(5)
+		if ch == ord('q'):
+			orientation = 270
+			break
+		elif ch == ord('w'):
+			orientation = 180
+			break
+		elif ch == ord('e'):
+			orientation = 90
+			break
+		elif ch == ord('r'):
+			orientation = 0
+			break
+	
 	perspective_xform = None
 	
 	print "Calibrating Camera: Press \"w\" when the camera is in position and the calibration card is placed directly under the robot"
@@ -666,7 +687,9 @@ def setup_camera(camnum=0):
 def get_frame():
 	global perspective_xform, rotation_angle, shear_angle, orientation, cam, IMG_SIZE
 	if (cam == None):
-		setup_camera()
+		#setup_camera()
+		"""This means we're in a non-camera mode.  Return a dummy image"""
+		return cv2.imread(DUMMYIMAGE)
 
 	cam.read()
 	frame = cv2.resize(cam.read()[1], (IMG_SIZE, IMG_SIZE), fx=0.0, fy=0.0, interpolation=cv2.INTER_AREA)
@@ -725,11 +748,11 @@ def write(output):
 
 def move(x,y,z):
 	"""Move to the coordinates given"""
-	z=-z if reversez else z
+	#z=-z if reversez else z
 	write("MV X%s Y%s Z%s;"%(x,y,z))
 
 def direct_move(x,y,z):
-	z=-z if reversez else z
+	#z=-z if reversez else z
 	write("DM X%s Y%s Z%s;"% (x,y,z))
 
 def brutekeys(pinlength, keys="0123456789", randomorder=False):
@@ -870,7 +893,7 @@ def find_drop():
 	
 
 def main(args):
-	global display, image, cam, shear_angle, rotation_angle, perspective_xform, orientation, detector, IMG_SIZE, reversez
+	global display, image, cam, shear_angle, rotation_angle, perspective_xform, orientation, detector, IMG_SIZE
 	
 	parser = argparse.ArgumentParser(description='This program controls a brute-forcing robot. Load arguments from a file with @FILENAME', fromfile_prefix_chars='@')
 	parser.add_argument('-p','--positions',help='NI! import a saved positions file')
@@ -898,40 +921,21 @@ def main(args):
 	if args.reversez is None:
 		print "User test here"
 		print "make sure to set true or false to newreversez"
-	
-	reversez=newreversez
 
 
 	# move robot out of the way
-	serialsetup(args.serialdevice)
-	move(0,0,5)
+	serialsetup(args.serialdevice, args.reversez)
+	move(0,0,4)
 
-	cam = setup_camera(int(args.videonum))
+	if not args.keyconfig:
+		cam = setup_camera(int(args.videonum))
+		perspective_xform = calibrate_camera(cam) 
+		if perspective_xform == None:
+			print "Calibration Failed. Exiting"
+			return 
 
-	cv2.namedWindow(WINDOW_NAME, cv2.WINDOW_AUTOSIZE)
-	print "Press a key to indicate the rotation of the camera: 'q' = viewing from left, 'w' = viewing from top, 'e' = viewing from right,'r' = viewing from bottom"
-	while True:
-		cv2.imshow(WINDOW_NAME, get_frame())
-		ch = cv2.waitKey(5)
-		if ch == ord('q'):
-			orientation = 270
-			break
-		elif ch == ord('w'):
-			orientation = 180
-			break
-		elif ch == ord('e'):
-			orientation = 90
-			break
-		elif ch == ord('r'):
-			orientation = 0
-			break
-	
-	perspective_xform = calibrate_camera(cam) 
-	if perspective_xform == None:
-		print "Calibration Failed. Exiting"
-		return 
-
-	print "Now place device to PIN crack as close to the middle of the calibration card as possible"
+	centername= "robot" if args.keyconfig else "calibration card"
+	print "Now place device to PIN crack as close to the middle of the %s as possible"%centername
 	print "Press \"w\" when this is completed"
 	
 			
