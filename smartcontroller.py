@@ -33,7 +33,7 @@ GREEN_COLOR=(0,255,0)
 PURPLE_COLOR=(255,0,255)
 
 DROP_Z = 0
-CURRENT_POINT = {'x':0.0, 'y':0.0, 'z':4.0}
+CURRENT_POINT = {'x':0.0, 'y':0.0, 'z':0.0}
 
 WINDOW_NAME = "R2B2"
 
@@ -81,7 +81,7 @@ DEFAULTSERIALPORT='COM4'
 writedelay=.5
 
 """If True, the input and output to serial are shown on the console"""
-SERIALTOCONSOLE=False
+SERIALTOCONSOLE=True
 
 def serialsetup(serialport,isreverse):
 	global ser
@@ -867,7 +867,7 @@ def enterpin(pin, buttondict):
 		move(coordinate['x'], coordinate['y'], coordinate['z'])
 		time.sleep(writedelay)
 
-	move(0,0,4)
+	move(0,0,0)
 	time.sleep(.2)
 	frame = get_frame()
 	if detect_change(frame, 100, detector):
@@ -891,7 +891,7 @@ def find_drop():
 	global DROP_Z, increment
 	print "Use 'q' and 'e' to lower the finger until it contacts the device"
 	print "Press 'c' when finished"
-	DROP_Z = 4
+	DROP_Z = 0
 	ch = cv2.waitKey()
 	while ch != ord('c'):
 		if ch == ord('q'):
@@ -913,7 +913,7 @@ def main(args):
 	parser.add_argument('-r','--resume',help='NI! resume a previous run')
 	parser.add_argument('-s','--serialdevice',help='Serial device (Mac/Linux) or COM port like "COMx" (Windows)', default=DEFAULTSERIALPORT)
 	parser.add_argument('-v','--videonum',help='Video capture device. "0" is the first, default value', default=1)
-	parser.add_argument('-k','--keyconfig', help='NI! Use keyboard configuration, not camera configuration', action="store_true")
+	parser.add_argument('-k','--keyconfig', help='Use keyboard configuration, not camera configuration', action="store_true")
 	parser.add_argument('-n','--nodetect', help='NI! Do not attempt to detect a finished run.  Runs until the series is completed', action="store_true")
 	parser.add_argument('-f','--pinfile', help='NI! Load brute force attempts from a file')
 	parser.add_argument('-a','--android', help='NI! Android mode.  Waits 30 seconds each 5 guesses, then presses ok', action="store_true")
@@ -938,7 +938,7 @@ def main(args):
 
 	# move robot out of the way
 	serialsetup(args.serialdevice, args.reversez)
-	move(0,0,4)
+	move(0,0,0)
 
 	if not args.keyconfig:
 		cam = setup_camera(int(args.videonum))
@@ -951,15 +951,12 @@ def main(args):
 	print "Now place device to PIN crack as close to the middle of the %s as possible"%centername
 	print "Press \"w\" when this is completed"
 	
-			
-	#(frame, rotation_angle, shear_angle) = derotate_and_deshear(frame)
-	
 	image = get_frame()
 	writedelay = .5
 	
 	buttons = calibrate_buttons()
 
-	move(0,0,4)
+	move(0,0,0)
 
 	if args.pinfile != None:
 		key = load_pinfile(args["pinfile"])
