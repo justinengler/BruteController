@@ -786,7 +786,7 @@ def brutekeys(pinlength, keys="0123456789", randomorder=False):
 	return allpossible
 
 def bruteloop(brutelist, buttondict, maxtries=None, actionlist=(), startpoint = 0):
-	global done_cracking, cooldown_time, attempts_per_cooldown, cooldown
+	global cooldown_time, attempts_per_cooldown, cooldown
 	"""Try to push the buttons for each possible PIN in the given list
 		
 		If an actionlist is given, function in second position will be called
@@ -808,29 +808,18 @@ def bruteloop(brutelist, buttondict, maxtries=None, actionlist=(), startpoint = 
 	brutecontinue=True
 
 	i = startpoint
-	while i < len(brutelist)and not done_cracking and tries < maxtries:
+	while i < len(brutelist)and brutecontinue and tries < maxtries:
 		pin = brutelist[i]
 		print "===Pushing %s:"%(pin,)
 		print "Press ESC to pause"
-					#for number in pin:
-					#print "pushing %s"%number
-					#push(toIdentifier(number))
-		enterpin(pin, buttondict)
+
+		brutecontinue = enterpin(pin, buttondict)
 				
-				#push(toIdentifier('Z'))
 		tries+=1
-		if (cooldown and tries % attempts_per_cooldown == 0 ):
-			move(0,0,0)
-			time.sleep(1)
-			coordinate = buttondict['8']
-			move(coordinate['x'], coordinate['y'], coordinate['z'])
-			move(0,0,0)
-			for i in range(cooldown_time):
-				time.sleep(1)
 							
 		for modulo,func in actionlist:
 			if tries % modulo == 0:                 
-				returnvalue=func(tries,pin,persister)
+				returnvalue=func(tries,pin,persister, buttondict)
 				if returnvalue is not None:
 					brutecontinue, persister = returnvalue
 		ch = cv2.waitKey(1)
@@ -844,7 +833,7 @@ def bruteloop(brutelist, buttondict, maxtries=None, actionlist=(), startpoint = 
 					break
 				elif get_word(ch, "quit"):
 					print "Quitting"
-					done_cracking = True
+					brutecontinue = False
 					break
 				ch = cv2.waitKey()
 			
@@ -857,7 +846,7 @@ def bruteloop(brutelist, buttondict, maxtries=None, actionlist=(), startpoint = 
 
 """ Couldn't get the EP command to work with 5 sets of coordinates - too much in one serial send?"""
 def enterpin(pin, buttondict):
-	global writedelay, additional_detectors, done_cracking, correct_pin, detector
+	global writedelay, additional_detectors, correct_pin, detector
 	ok_required = True
 	for number in pin:
 		if (number in buttondict):
@@ -887,9 +876,10 @@ def enterpin(pin, buttondict):
 				additional_detectors.append(create_detector(frame))
 			else:
 				correct_pin = pin
-				done_cracking = True
 				print "CORRECT PIN: ", pin
-
+				return false
+	return True
+				
 def find_drop():
 	global DROP_Z, increment
 	print "Use 'q' and 'e' to lower the finger until it contacts the device"
@@ -955,7 +945,7 @@ def main(args):
 	print "Press \"w\" when this is completed"
 	
 	image = get_frame()
-	writedelay = .5
+	writedelay = .05
 	
 	buttons = calibrate_buttons()
 
@@ -967,10 +957,22 @@ def main(args):
 		keys = load_pinfile("pins.txt")
 		#keys = brutekeys(4, randomorder=False)
 
-	bruteloop(keys,buttons, maxtries=10000)
+	if args.android:
+		bruteloop(keys,buttons, maxtries=10000, actionlist = [(5, standroid_PIN_wait)])
+	else:
+		bruteloop(keys,buttons, maxtries=10000)
 
 	cv2.destroyAllWindows()
 	return 0
+
+def standroid_PIN_wait(tries, pin, persistant_data, buttondict):
+	move(0,0,1)
+	button = buttondict['8']
+	move(button['x'], button['y'], button['z'])
+	move (0,0,1)
+	time.sleep(30)
+	return True, persistant_data
+								      
 
 def load_pinfile(pinfile_name):
 	keys = list()
