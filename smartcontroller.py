@@ -474,7 +474,7 @@ def get_focus_area(frame):
 	selection_img = np.copy(frame)
 
 	cv2.setMouseCallback(WINDOW_NAME, selection_drag, (selection_img))
-	ch =cv2.waitKey(5)
+	ch = cv2.waitKey(5)
 	while ch != ord('w'):
 		ch =cv2.waitKey(5)
 
@@ -531,8 +531,13 @@ def calibrate_buttons(keyboardonly=False, ):
 	
 	cv2.setMouseCallback(WINDOW_NAME, on_point_clicked, (WINDOW_NAME, frame))
 	print "Click on the screen and use q,w,e,a,s,d to move the robot."
+	print "Commands are as folllows: "
 	print "Press a number key (1-9) to change the size of the step for keyboard movements"
-	print "Type \"SetBUTTONNAME\" to set a button's location"
+	print "\"SetBUTTONNAME\" to set a button's location"
+	print "\"GotoBUTTONNAME\" to go to a previously defined button's location"
+	print "\"LoadFILENAME\" to load a previously saved configuration file"
+	print "\"SaveFILENAME\" to save this configuration"
+	print "\"Defined\" to print the buttons defined so far"
 	print "Press ESC when finished"         
 	cv2.imshow(WINDOW_NAME, frame)
 	ch = cv2.waitKey()
@@ -575,9 +580,24 @@ def calibrate_buttons(keyboardonly=False, ):
 			
 		elif get_word(ch, "Goto"):
 			goto_button(buttons)
+
+		elif get_word(ch, "Load"):
+			load_config(buttons)
+
+		elif get_word(ch, "Save"):
+			save_config(buttons)
+
+		elif get_word(ch, "Defined"):
+			print_config(buttons)
+		
 			
 		elif ch == 27:
-			break
+			print "Are you sure you are ready to start? ('y/n')"
+			print_config(buttons)
+			ch =cv2.waitKey()
+			if ch ==ord('y')
+				break
+						
 		ch = cv2.waitKey()
 
 
@@ -610,6 +630,22 @@ def set_button(buttons):
 	print "Set %s to %s" %(button_name, newpoint)
 	buttons[button_name] = newpoint
 
+def load_config(buttons):
+	print "Enter the name of the configuration file to load (press 'Return' when finished)"
+	file_name = get_user_word()
+	buttons = pickle.load(open(file_name, 'r'))
+
+def save_config(buttons):
+	print "Enter the name of the file to save to (press 'Return' when finished)"
+	file_name = get_user_word()
+	pickle.dump(buttons, open(file_name, 'w'))
+
+def print_buttons(buttons):
+	sorted_buttons = sorted((i,j) for i,j in buttons.items())	
+	print "BUTTONS DEFINED:"
+	for pair in sorted_buttons:
+		print pair
+	
 
 def get_user_word(terminal_character="\r"):
 	word = ""
@@ -775,11 +811,11 @@ def direct_move(x,y,z):
 
 def brutekeys(pinlength, keys="0123456789", randomorder=False):
 	"""
-	Returns a list of all possibilities to try, based on the length of PIN and buttons given.
+	Returns a list of all possibilities to try, based on the length of s and buttons given.
 	
 	Yeah, lots of slow list copying here, but who cares, it's dwarfed by the actual guessing.
 	"""
-	allpossible = list(itertools.imap(lambda x: "".join(x),itertools.product(keys, repeat=pinlength)))
+	allpossible = list(itertools.imap(lambda x: "".join(x),itertools.product(keys, repeat=length)))
 	if randomorder:
 		random.shuffle(allpossible)
 
@@ -854,10 +890,15 @@ def enterpin(pin, buttondict):
 			move(coordinate['x'], coordinate['y'], coordinate['z'])
 			time.sleep(writedelay)
 		
-	if (ok_required):
+	if ('OK' in buttondict):
 		coordinate = buttondict["OK"]
 		move(coordinate['x'], coordinate['y'], coordinate['z'])
 		time.sleep(writedelay)
+	elif ('ok' in buttondict):
+		coordinate = buttondict["ok"]
+		move(coordinate['x'], coordinate['y'], coordinate['z'])
+		time.sleep(writedelay)
+
 
 	move(0,0,0)
 	time.sleep(.2)
@@ -978,7 +1019,7 @@ def load_pinfile(pinfile_name):
 	keys = list()
 	pinfile = open(pinfile_name, 'r')
 	for line in pinfile:
-		keys.append(line)
+		keys.append(line.split('#')[0])
 	return keys
 		
 if __name__ == "__main__":
