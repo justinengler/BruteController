@@ -650,6 +650,7 @@ def load_config():
 	print "Enter the name of the configuration file to read(press 'Return' when finished)"
 	file_name = get_user_word()
 	return pickle.load(open(file_name, 'r'))
+	print "File loaded successfully."
 
 def save_config(buttons):
 	print "Enter the name of the file to write to (press 'Return' when finished)"
@@ -918,7 +919,7 @@ def enterpin(pin, buttondict):
 
 	return True
 
-def detect_change(tries, pin, persistant_data, buttondict)
+def change_finder_action(tries, pin, persistant_data, buttondict):
 	global detector, additional_detectors
 	move(0,0,0)
 	time.sleep(.2)
@@ -938,8 +939,8 @@ def detect_change(tries, pin, persistant_data, buttondict)
 			else:
 				correct_pin = pin
 				print "CORRECT PIN: ", pin
-				return false, persistant_data
-	return true, persistant_data
+				return False, persistant_data
+	return True, persistant_data
 
 				
 def find_drop():
@@ -1025,7 +1026,7 @@ def main(args):
 		actionlist.append((5, standroid_PIN_wait))
 
 	if not args.nodetect: #IMPORTANT!  Needs to be after the standroid wait
-		actionlist.append((1, detect_change))
+		actionlist.append((1, change_finder_action))
 		
 	bruteloop(keys,buttons, maxtries=10000, actionlist=actionlist)
 
