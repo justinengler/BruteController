@@ -343,27 +343,37 @@ def perspective_shift(img):
 			shifted_img = cv2.warpPerspective(img, xform, (IMG_SIZE,IMG_SIZE))
 
 			return shifted_img, xform
+
+
 		
 		if len(landmarks) == 4:
 			landmarks = sort_to_square(landmarks)
-			print landmarks
 			shifted_img, perspective_xform = shift(landmarks, img)
+			print "Are these landmarks correct? (y/n)"
+			while True:
+				ch = cv2.waitKey()
+				if ch ==ord('y'):
+					break
+				elif ch == ord('n'):
+					print "Perform manual landmark entry (or try again)? (y/n)"
+					while True:
+						ch = cv2.waitKey()
+						if ch == ord('y'):
+							shifted_img,perspective_xform = do_manual_selection(img, contour_boxes)
+							break
+						elif ch == ord('n'):
+							break
+					break
+							
+						
+					
 		elif len(landmarks) != 4:
 			if len(landmarks) > 4:
 				print "More than 4 marks found, please select the four calibration marks or press Esc"
 			else:
 				print "Fewer than 4 marks found, please select the four calibration marks or press Esc"
-				
-			correct_landmarks =list()
-			
-			cv2.setMouseCallback(WINDOW_NAME, select_landmark, (img, contour_boxes,correct_landmarks))
-			ch = cv2.waitKey(5)
-			while len(correct_landmarks)< 4 and ch != 23:
-				ch = cv2.waitKey(5)
 
-			landmarks = sort_to_square(correct_landmarks)
-			print landmarks
-			shifted_img, perspective_xform = shift(landmarks, img)
+			shifted_img, perspective_xform = do_manual_selection(img, contour_boxes)				
 			break
 
 		else:
@@ -380,6 +390,17 @@ def perspective_shift(img):
 		return (shifted_img, perspective_xform)
 
 
+def do_manual_selection(img, contour_boxes):
+	correct_landmarks =list()
+	
+	cv2.setMouseCallback(WINDOW_NAME, select_landmark, (img, contour_boxes,correct_landmarks))
+	ch = cv2.waitKey(5)
+	while len(correct_landmarks)< 4 and ch != 23:
+		ch = cv2.waitKey(5)
+
+	landmarks = sort_to_square(correct_landmarks)
+	return shifted_img, perspective_xform = shift(landmarks, img)
+	
 def good_transform (img, goal):
 	# TODO: determine exactly how to measure a good transform -
 	# obviously it will have the 4 contours in the right
@@ -524,11 +545,6 @@ def calibrate_buttons(keyboardonly=False, ):
 	
 	buttons = {}
 
-	print "Press 'o'  to load a preconfigured button layout.  Any other key to continue."
-	ch = cv2.waitKey()
-	if ch == ord('o'):
-		buttons = pickle.load(open("buttons.p", 'r'))
-	
 	cv2.setMouseCallback(WINDOW_NAME, on_point_clicked, (WINDOW_NAME, frame))
 	print "Click on the screen and use q,w,e,a,s,d to move the robot."
 	print "Commands are as folllows: "
