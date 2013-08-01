@@ -845,7 +845,7 @@ def bruteloop(brutelist, buttondict, maxtries=None, actionlist=(), startpoint = 
 		every [first position] number of guesses, AFTER the guess.  For example, to wait 2 seconds after every
 		guess, put an actionlist of ((1,somefuncthatwaits2seconds),). 
 		
-		The function called should have the signature funcname(guessnum, PIN, persistdata).  
+		The function called should have the signature funcname(guessnum, PIN, persistdata, buttondict).  
 		Return value should be None, or a tuple of a bool and a persistence value.  
 		Any returned persistence value will be passed into persistdata on the next call.
 		If the bool in the tuple is False, the bruteforcing is stopped.  When bruteloop exits,
@@ -874,6 +874,9 @@ def bruteloop(brutelist, buttondict, maxtries=None, actionlist=(), startpoint = 
 				returnvalue=func(tries,pin,persister, buttondict)
 				if returnvalue is not None:
 					brutecontinue, persister = returnvalue
+					if not brutecontinue:
+						print "PIN FOUND! Exiting"
+						exit()
 		ch = cv2.waitKey(1)
 		if ch == 27:
 			print "Press ESC to resume"
@@ -888,8 +891,6 @@ def bruteloop(brutelist, buttondict, maxtries=None, actionlist=(), startpoint = 
 					brutecontinue = False
 					break
 				ch = cv2.waitKey()
-			
-			
 			
 		i += 1
 		
@@ -915,7 +916,10 @@ def enterpin(pin, buttondict):
 		move(coordinate['x'], coordinate['y'], coordinate['z'])
 		time.sleep(writedelay)
 
+	return True
 
+def detect_change(tries, pin, persistant_data, buttondict)
+	global detector, additional_detectors
 	move(0,0,0)
 	time.sleep(.2)
 	frame = get_frame()
@@ -934,8 +938,9 @@ def enterpin(pin, buttondict):
 			else:
 				correct_pin = pin
 				print "CORRECT PIN: ", pin
-				return false
-	return True
+				return false, persistant_data
+	return true, persistant_data
+
 				
 def find_drop():
 	global DROP_Z, increment
@@ -964,7 +969,7 @@ def main(args):
 	parser.add_argument('-s','--serialdevice',help='Serial device (Mac/Linux) or COM port like "COMx" (Windows)', default=DEFAULTSERIALPORT)
 	parser.add_argument('-v','--videonum',help='Video capture device. "0" is the first, default value', default=1)
 	parser.add_argument('-k','--keyconfig', help='Use keyboard configuration, not camera configuration', action="store_true")
-	parser.add_argument('-n','--nodetect', help='NI! Do not attempt to detect a finished run.  Runs until the series is completed', action="store_true")
+	parser.add_argument('-n','--nodetect', help='Do not attempt to detect a finished run.  Runs until the series is completed', action="store_true")
 	parser.add_argument('-f','--pinfile', help='Load brute force attempts from a file')
 	parser.add_argument('-a','--android', help='Android mode.  Waits 30 seconds each 5 guesses, then presses ok', action="store_true")
 	parser.add_argument('-z','--reversez', help='Reverse the Z axis', action="store_true")
@@ -1014,10 +1019,15 @@ def main(args):
 		keys = load_pinfile("pins.txt")
 		#keys = brutekeys(4, randomorder=False)
 
+	actionlist=[]
+	
 	if args.android:
-		bruteloop(keys,buttons, maxtries=10000, actionlist = [(5, standroid_PIN_wait)])
-	else:
-		bruteloop(keys,buttons, maxtries=10000)
+		actionlist.append((5, standroid_PIN_wait))
+
+	if not args.nodetect: #IMPORTANT!  Needs to be after the standroid wait
+		actionlist.append((1, detect_change))
+		
+	bruteloop(keys,buttons, maxtries=10000, actionlist=actionlist)
 
 	cv2.destroyAllWindows()
 	return 0
