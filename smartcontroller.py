@@ -649,8 +649,9 @@ def set_button(buttons):
 def load_config():
 	print "Enter the name of the configuration file to read(press 'Return' when finished)"
 	file_name = get_user_word()
-	return pickle.load(open(file_name, 'r'))
 	print "File loaded successfully."
+	return pickle.load(open(file_name, 'r'))
+
 
 def save_config(buttons):
 	print "Enter the name of the file to write to (press 'Return' when finished)"
@@ -819,12 +820,10 @@ def write(output):
 
 def move(x,y,z):
 	"""Move to the coordinates given"""
-	#z=-z if reversez else z
 	write("MV X%s Y%s Z%s;"%(x,y,z))
 
 def direct_move(x,y,z):
-	#z=-z if reversez else z
-	write("DM X%s Y%s Z%s;"% (x,y,z))
+	write("DM X%s Y%s Z%s;"%(x,y,z))
 
 def brutekeys(pinlength, keys="0123456789", randomorder=False):
 	"""
@@ -838,7 +837,7 @@ def brutekeys(pinlength, keys="0123456789", randomorder=False):
 
 	return allpossible
 
-def bruteloop(brutelist, buttondict, maxtries=None, actionlist=(), startpoint = 0):
+def bruteloop(brutelist, buttondict, maxtries=None, actionlist=(), startpoint = 0, patternmode=False):
 	global cooldown_time, attempts_per_cooldown, cooldown
 	"""Try to push the buttons for each possible PIN in the given list
 		
@@ -866,7 +865,7 @@ def bruteloop(brutelist, buttondict, maxtries=None, actionlist=(), startpoint = 
 		print "===Pushing %s:"%(pin,)
 		print "Press ESC to pause"
 
-		brutecontinue = enterpin(pin, buttondict)
+		brutecontinue = enterpin(pin, buttondict, patternmode)
 				
 		tries+=1
 							
@@ -899,14 +898,20 @@ def bruteloop(brutelist, buttondict, maxtries=None, actionlist=(), startpoint = 
 
 
 """ Couldn't get the EP command to work with 5 sets of coordinates - too much in one serial send?"""
-def enterpin(pin, buttondict):
+def enterpin(pin, buttondict, patternmode):
 	global writedelay, additional_detectors, correct_pin, detector
 	ok_required = True
 	for number in pin:
 		if (number in buttondict):
 			coordinate = buttondict[str(number)]
-			move(coordinate['x'], coordinate['y'], coordinate['z'])
+			if not patternmode:
+				move(coordinate['x'], coordinate['y'], coordinate['z'])
+			else:
+				directmove(coordinate['x'], coordinate['y'], coordinate['z'])
+			
 			time.sleep(writedelay)
+			
+			
 		
 	if ('OK' in buttondict):
 		coordinate = buttondict["OK"]
@@ -965,32 +970,26 @@ def main(args):
 	global display, image, cam, shear_angle, rotation_angle, perspective_xform, orientation, detector, IMG_SIZE
 	
 	parser = argparse.ArgumentParser(description='This program controls a brute-forcing robot. Load arguments from a file with @FILENAME', fromfile_prefix_chars='@')
-	parser.add_argument('-p','--positions',help='NI! import a saved positions file')
+	parser.add_argument('-l','--loadpositions',help='import a saved positions file')
 	parser.add_argument('-r','--resume',help='NI! resume a previous run')
 	parser.add_argument('-s','--serialdevice',help='Serial device (Mac/Linux) or COM port like "COMx" (Windows)', default=DEFAULTSERIALPORT)
-	parser.add_argument('-v','--videonum',help='Video capture device. "0" is the first, default value', default=1)
+	parser.add_argument('-v','--videonum',help='Video capture device. "0" is the first', default=1)
 	parser.add_argument('-k','--keyconfig', help='Use keyboard configuration, not camera configuration', action="store_true")
 	parser.add_argument('-n','--nodetect', help='Do not attempt to detect a finished run.  Runs until the series is completed', action="store_true")
 	parser.add_argument('-f','--pinfile', help='Load brute force attempts from a file')
 	parser.add_argument('-a','--android', help='Android mode.  Waits 30 seconds each 5 guesses, then presses ok', action="store_true")
 	parser.add_argument('-z','--reversez', help='Reverse the Z axis', action="store_true")
-	
+	parser.add_argument('-p','--pattern', help='Do a sliding pattern unlock. --maxlen or --maxtries recommended!.', action="store_true")
+	parser.add_argument('-m','--maxlen',  help='!NI maximum length to try.')
+	parser.add_argument('-t','--maxtries', help='Maximum number of guesses before quit')
 	args = parser.parse_args()
  
 	## show values ##
 	print args
- 	
- 
-	#exit()
-	
+
 	display = True
 	
-	
 	newreversez=bool(args.reversez)
-	if args.reversez is None:
-		print "User test here"
-		print "make sure to set true or false to newreversez"
-
 
 	# move robot out of the way
 	serialsetup(args.serialdevice, args.reversez)
@@ -1003,14 +1002,17 @@ def main(args):
 			print "Calibration Failed. Exiting"
 			return 
 
-	centername= "robot" if args.keyconfig else "calibration card"
-	print "Now place device to PIN crack as close to the middle of the %s as possible"%centername
-	print "Press \"w\" when this is completed"
+	if args.loadpositions is not None:
+		buttons=pickle.load(open(args.loadpositions, 'r'))
+	else:	
+		centername= "robot" if args.keyconfig else "calibration card"
+		print "Now place device to PIN crack as close to the middle of the %s as possible"%centername
+		print "Press \"w\" when this is completed"
 	
-	image = get_frame()
-	writedelay = .05
+		image = get_frame()
+		writedelay = .05
 	
-	buttons = calibrate_buttons()
+		buttons = calibrate_buttons()
 
 	move(0,0,0)
 
@@ -1028,7 +1030,7 @@ def main(args):
 	if not args.nodetect: #IMPORTANT!  Needs to be after the standroid wait
 		actionlist.append((1, change_finder_action))
 		
-	bruteloop(keys,buttons, maxtries=10000, actionlist=actionlist)
+	bruteloop(keys,buttons, maxtries=args.maxtries, actionlist=actionlist)
 
 	cv2.destroyAllWindows()
 	return 0
