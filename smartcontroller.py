@@ -965,8 +965,8 @@ def main(args):
 	parser.add_argument('-v','--videonum',help='Video capture device. "0" is the first, default value', default=1)
 	parser.add_argument('-k','--keyconfig', help='Use keyboard configuration, not camera configuration', action="store_true")
 	parser.add_argument('-n','--nodetect', help='NI! Do not attempt to detect a finished run.  Runs until the series is completed', action="store_true")
-	parser.add_argument('-f','--pinfile', help='NI! Load brute force attempts from a file')
-	parser.add_argument('-a','--android', help='NI! Android mode.  Waits 30 seconds each 5 guesses, then presses ok', action="store_true")
+	parser.add_argument('-f','--pinfile', help='Load brute force attempts from a file')
+	parser.add_argument('-a','--android', help='Android mode.  Waits 30 seconds each 5 guesses, then presses ok', action="store_true")
 	parser.add_argument('-z','--reversez', help='Reverse the Z axis', action="store_true")
 	
 	args = parser.parse_args()
