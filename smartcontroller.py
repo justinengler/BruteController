@@ -519,25 +519,8 @@ def on_point_clicked(event, x, y, flag, param):
 		
 def calibrate_buttons(keyboardonly=False, ):
 	global cam, detector, increment, writedelay
-	
-	frame =get_frame()
-	cv2.imshow(WINDOW_NAME, frame)
 
-	print "Position the device under the robot."
-	print "Press 'w' when this is completed"
-	ch = None
-	while ch != ord('w'):
-		ch = cv2.waitKey()
-
-	print "Calibration Beginning"
-
-	get_frame()
 	frame = get_frame()
-	get_focus_area(frame)
-
-	cv2.destroyWindow("R2B2")
-	cv2.namedWindow("R2B2", cv2.WINDOW_AUTOSIZE)
-
 	cv2.imshow(WINDOW_NAME, frame)
 		
 	
@@ -818,6 +801,9 @@ def write(output):
 	if SERIALTOCONSOLE:
 		print "--FROMSERIAL:%s"%fromserial
 
+def bounce(x,y,z):
+	write("BM X%s Y%s Z%s;"%(x,y,z))
+
 def move(x,y,z):
 	"""Move to the coordinates given"""
 	write("MV X%s Y%s Z%s;"%(x,y,z))
@@ -901,13 +887,18 @@ def bruteloop(brutelist, buttondict, maxtries=None, actionlist=(), startpoint = 
 def enterpin(pin, buttondict, patternmode):
 	global writedelay, additional_detectors, correct_pin, detector
 	ok_required = True
+	i = 0
 	for number in pin:
 		if (number in buttondict):
 			coordinate = buttondict[str(number)]
 			if not patternmode:
-				move(coordinate['x'], coordinate['y'], coordinate['z'])
+				bounce(coordinate['x'], coordinate['y'], coordinate['z'])
 			else:
-				directmove(coordinate['x'], coordinate['y'], coordinate['z'])
+				if i == 0:
+					move(coordinate['x'],coordinate['y'],coordinate['z'])
+					i += 1
+				else:
+					direct_move(coordinate['x'], coordinate['y'], coordinate['z'])
 			
 			time.sleep(writedelay)
 			
@@ -926,7 +917,7 @@ def enterpin(pin, buttondict, patternmode):
 
 def change_finder_action(tries, pin, persistant_data, buttondict):
 	global detector, additional_detectors
-	move(0,0,0)
+	direct_move(0,0,0)
 	time.sleep(.2)
 	frame = get_frame()
 	if detect_change(frame, 100, detector):
@@ -1001,6 +992,19 @@ def main(args):
 		if perspective_xform == None:
 			print "Calibration Failed. Exiting"
 			return 
+		
+	print "Position the device under the robot."
+	print "Press 'w' when this is completed"
+	ch = None
+	while ch != ord('w'):
+		ch = cv2.waitKey()
+
+	get_frame()
+	frame = get_frame()
+	get_focus_area(frame)
+
+	cv2.destroyWindow("R2B2")
+	cv2.namedWindow("R2B2", cv2.WINDOW_AUTOSIZE)
 
 	if args.loadpositions is not None:
 		buttons=pickle.load(open(args.loadpositions, 'r'))
@@ -1030,7 +1034,7 @@ def main(args):
 	if not args.nodetect: #IMPORTANT!  Needs to be after the standroid wait
 		actionlist.append((1, change_finder_action))
 		
-	bruteloop(keys,buttons, maxtries=args.maxtries, actionlist=actionlist)
+	bruteloop(keys,buttons, maxtries=args.maxtries, actionlist=actionlist, patternmode=args.pattern)
 
 	cv2.destroyAllWindows()
 	return 0
