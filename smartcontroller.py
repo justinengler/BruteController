@@ -82,7 +82,7 @@ DEFAULTSERIALPORT='COM4'
 writedelay=.5
 
 """If True, the input and output to serial are shown on the console"""
-SERIALTOCONSOLE=True
+SERIALTOCONSOLE=False
 
 def serialsetup(serialport,isreverse):
 	global ser
@@ -323,27 +323,7 @@ def perspective_shift(img):
 
 			return result
 
-		def sort_to_square(points):
-			print points
-			square = list()
-			y_sorted = sorted(points, key=lambda p: p[1])
-			square.append(min(y_sorted[0:2], key=lambda p: p[0]))
-			square.append(max(y_sorted[0:2], key=lambda p: p[0]))
-			square.append(min(y_sorted[2:4], key=lambda p: p[0]))
-			square.append(max(y_sorted[2:4], key=lambda p: p[0]))
-			print square
-			return square
-			
-		def shift(square, img):
-			src =np.array(square, np.float32)
-			print(src)
-			dst = np.array(ideal_positions, np.float32 )
-			print(dst)
-			xform =cv2.getPerspectiveTransform(src,dst)
-			shifted_img = cv2.warpPerspective(img, xform, (IMG_SIZE,IMG_SIZE))
-
-			return shifted_img, xform
-
+	
 
 		
 		if len(landmarks) == 4:
@@ -389,6 +369,26 @@ def perspective_shift(img):
 	else:
 		return (shifted_img, perspective_xform)
 
+def sort_to_square(points):
+	print points
+	square = list()
+	y_sorted = sorted(points, key=lambda p: p[1])
+	square.append(min(y_sorted[0:2], key=lambda p: p[0]))
+	square.append(max(y_sorted[0:2], key=lambda p: p[0]))
+	square.append(min(y_sorted[2:4], key=lambda p: p[0]))
+	square.append(max(y_sorted[2:4], key=lambda p: p[0]))
+	print square
+	return square
+			
+def shift(square, img):
+	src =np.array(square, np.float32)
+	print(src)
+	dst = np.array(ideal_positions, np.float32 )
+	print(dst)
+	xform =cv2.getPerspectiveTransform(src,dst)
+	shifted_img = cv2.warpPerspective(img, xform, (IMG_SIZE,IMG_SIZE))
+
+	return shifted_img, xform
 
 def do_manual_selection(img, contour_boxes):
 	correct_landmarks =list()
@@ -399,7 +399,7 @@ def do_manual_selection(img, contour_boxes):
 		ch = cv2.waitKey(5)
 
 	landmarks = sort_to_square(correct_landmarks)
-	return shifted_img, perspective_xform = shift(landmarks, img)
+	return shift(landmarks, img)
 	
 def good_transform (img, goal):
 	# TODO: determine exactly how to measure a good transform -
@@ -551,8 +551,8 @@ def calibrate_buttons(keyboardonly=False, ):
 	print "Press a number key (1-9) to change the size of the step for keyboard movements"
 	print "\"SetBUTTONNAME\" to set a button's location"
 	print "\"GotoBUTTONNAME\" to go to a previously defined button's location"
-	print "\"LoadFILENAME\" to load a previously saved configuration file"
-	print "\"SaveFILENAME\" to save this configuration"
+	print "\"ReadFILENAME\" to load a previously saved configuration file"
+	print "\"WriteFILENAME\" to save this configuration"
 	print "\"Defined\" to print the buttons defined so far"
 	print "Press ESC when finished"         
 	cv2.imshow(WINDOW_NAME, frame)
@@ -597,10 +597,10 @@ def calibrate_buttons(keyboardonly=False, ):
 		elif get_word(ch, "Goto"):
 			goto_button(buttons)
 
-		elif get_word(ch, "Load"):
-			load_config(buttons)
+		elif get_word(ch, "Read"):
+			buttons = load_config()
 
-		elif get_word(ch, "Save"):
+		elif get_word(ch, "Write"):
 			save_config(buttons)
 
 		elif get_word(ch, "Defined"):
@@ -611,7 +611,7 @@ def calibrate_buttons(keyboardonly=False, ):
 			print "Are you sure you are ready to start? ('y/n')"
 			print_config(buttons)
 			ch =cv2.waitKey()
-			if ch ==ord('y')
+			if ch ==ord('y'):
 				break
 						
 		ch = cv2.waitKey()
@@ -646,17 +646,17 @@ def set_button(buttons):
 	print "Set %s to %s" %(button_name, newpoint)
 	buttons[button_name] = newpoint
 
-def load_config(buttons):
-	print "Enter the name of the configuration file to load (press 'Return' when finished)"
+def load_config():
+	print "Enter the name of the configuration file to read(press 'Return' when finished)"
 	file_name = get_user_word()
-	buttons = pickle.load(open(file_name, 'r'))
+	return pickle.load(open(file_name, 'r'))
 
 def save_config(buttons):
-	print "Enter the name of the file to save to (press 'Return' when finished)"
+	print "Enter the name of the file to write to (press 'Return' when finished)"
 	file_name = get_user_word()
 	pickle.dump(buttons, open(file_name, 'w'))
 
-def print_buttons(buttons):
+def print_config(buttons):
 	sorted_buttons = sorted((i,j) for i,j in buttons.items())	
 	print "BUTTONS DEFINED:"
 	for pair in sorted_buttons:
