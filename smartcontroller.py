@@ -79,7 +79,7 @@ FIRSTCHAR=ord('a')
 DEFAULTSERIALPORT='COM4'
 
 
-writedelay=.5
+writedelay=.05
 
 """If True, the input and output to serial are shown on the console"""
 SERIALTOCONSOLE=False
@@ -455,6 +455,8 @@ def detect_change(cur_img, mismatch_threshold, detector_to_use):
 	mismatches = 0
 	 
 	if cur_descriptors != None:
+		if (len (cur_descriptors))< mismatch_threshold:
+			return True
 		for h,des in enumerate(cur_descriptors):
 			des = np.asmatrix(des,np.float32)
 			retval, results, neigh_resp, dists = detector_to_use.find_nearest(des,1)
@@ -707,8 +709,6 @@ def calibrate_camera(cam):
 		if ch == 27:
 			cv2.destroyAllWindows()
 			break
-		if ch == ord('c'):
-			cv.SaveImage("calib.jpg", cv.fromarray(vis))
 		if ch == ord('w'):
 			
 			image = cv2.resize(vis,  (IMG_SIZE, IMG_SIZE), fx=0.0, fy=0.0, interpolation=cv2.INTER_AREA)
@@ -917,25 +917,25 @@ def enterpin(pin, buttondict, patternmode):
 
 def change_finder_action(tries, pin, persistant_data, buttondict):
 	global detector, additional_detectors
-	direct_move(0,0,0)
+	direct_move(0,0,1)
 	time.sleep(.2)
 	frame = get_frame()
-	if detect_change(frame, 100, detector):
+	threshold = 100
+	if detect_change(frame, threshold, detector):
 		change_detected =True
 		for d in additional_detectors:
-			if (not detect_change(frame, 100, d)):
+			if (not detect_change(frame, threshold, d)):
 			    change_detected =False
 			    break
 		if (change_detected):
 			print "CHANGE DETECTED!"
-			print "Is it unlocked? (y/n)"
-			ch = cv2.waitKey()
-			if ch == ord("n"):
-				additional_detectors.append(create_detector(frame))
-			else:
-				correct_pin = pin
-				print "CORRECT PIN: ", pin
-				return False, persistant_data
+			print "Possibly Unlocked"
+			savename =str(pin.split()[0]) + ".jpg"
+			print savename
+			cv.SaveImage(savename, cv.fromarray(frame))
+			additional_detectors.append(create_detector(frame))
+			if len (additional_detectors) > 10:
+				additional_detectors.pop(3)
 	return True, persistant_data
 
 				
