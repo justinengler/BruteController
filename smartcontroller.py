@@ -78,8 +78,7 @@ FIRSTCHAR=ord('a')
 
 DEFAULTSERIALPORT='COM4'
 
-
-writedelay=.05
+writedelay=.5
 
 """If True, the input and output to serial are shown on the console"""
 SERIALTOCONSOLE=False
@@ -423,6 +422,8 @@ def create_detector(img):
 	if (selection != None):
 		imgg = imgg[selection[1]:selection[1]+selection[3], selection[0]:selection[0] +selection[0]]
 
+	hist = [sum(x) for  x in imgg]
+	return hist
 			
 	keypoints = surfDetector.detect(imgg)
 	keypoints, descriptors = surfDescriptorExtractor.compute(imgg,keypoints)
@@ -440,7 +441,6 @@ compared to the image used to train the detector'''
 def detect_change(cur_img, mismatch_threshold, detector_to_use):
 	global selection
 	DIST_THRESHOLD = 0.1
-
 	surfDetector = cv2.FeatureDetector_create("SURF")
 	surfDescriptorExtractor = cv2.DescriptorExtractor_create("SURF")
 
@@ -448,6 +448,13 @@ def detect_change(cur_img, mismatch_threshold, detector_to_use):
 	if (selection != None):
 		cur_imgg = cur_imgg[selection[1]:selection[1]+selection[3], selection[0]:selection[0] +selection[0]]
 
+
+	hist = [sum(x) for x in cur_imgg]
+	diff = 0
+	for i in range(len(hist)):
+		diff += int(hist[i] - detector_to_use[i])* int(hist[i]-detector_to_use[i])	
+	print diff
+	return diff > mismatch_threshold or diff < 0
 	
 	cur_keypoints = surfDetector.detect(cur_imgg)
 	cur_keypoints, cur_descriptors = surfDescriptorExtractor.compute(cur_imgg,cur_keypoints)
@@ -765,8 +772,6 @@ def get_frame():
 
 	if (shear_angle != None):
 		frame = unshear(frame, shear_angle)
-
-	
 	
 	return frame                        
 
@@ -899,9 +904,8 @@ def enterpin(pin, buttondict, patternmode):
 					i += 1
 				else:
 					direct_move(coordinate['x'], coordinate['y'], coordinate['z'])
-			
+
 			time.sleep(writedelay)
-			
 			
 		
 	if ('OK' in buttondict):
@@ -920,7 +924,7 @@ def change_finder_action(tries, pin, persistant_data, buttondict):
 	direct_move(0,0,1)
 	time.sleep(.2)
 	frame = get_frame()
-	threshold = 100
+	threshold = 200000000
 	if detect_change(frame, threshold, detector):
 		change_detected =True
 		for d in additional_detectors:
@@ -930,7 +934,7 @@ def change_finder_action(tries, pin, persistant_data, buttondict):
 		if (change_detected):
 			print "CHANGE DETECTED!"
 			print "Possibly Unlocked"
-			savename =str(pin.split()[0]) + ".jpg"
+			savename ="pin-images/" + str(pin.split()[0]) + ".jpg"
 			print savename
 			cv.SaveImage(savename, cv.fromarray(frame))
 			additional_detectors.append(create_detector(frame))
@@ -958,7 +962,7 @@ def find_drop():
 	
 
 def main(args):
-	global display, image, cam, shear_angle, rotation_angle, perspective_xform, orientation, detector, IMG_SIZE
+	global display, image, cam, shear_angle, rotation_angle, perspective_xform, orientation, detector, IMG_SIZE, writedelay
 	
 	parser = argparse.ArgumentParser(description='This program controls a brute-forcing robot. Load arguments from a file with @FILENAME', fromfile_prefix_chars='@')
 	parser.add_argument('-l','--loadpositions',help='import a saved positions file')
@@ -1023,7 +1027,10 @@ def main(args):
 	if args.pinfile != None:
 		key = load_pinfile(args["pinfile"])
 	else:
-		keys = load_pinfile("pins.txt")
+		if args.pattern:
+			keys = load_pinfile("patternlock.txt")
+		else:
+			keys = load_pinfile("pins.txt")
 		#keys = brutekeys(4, randomorder=False)
 
 	actionlist=[]
@@ -1033,17 +1040,26 @@ def main(args):
 
 	if not args.nodetect: #IMPORTANT!  Needs to be after the standroid wait
 		actionlist.append((1, change_finder_action))
-		
+
+	if (args.pattern):
+		actionlist.append((19, stop))
+		writedelay = 0.5
+	else:
+		writedelay = 0.05
 	bruteloop(keys,buttons, maxtries=args.maxtries, actionlist=actionlist, patternmode=args.pattern)
 
 	cv2.destroyAllWindows()
 	return 0
 
+def stop(tries, pin ,persistant_data, buttondict):
+	return False, persistant_data
+
 def standroid_PIN_wait(tries, pin, persistant_data, buttondict):
 	move(0,0,1)
-	button = buttondict['8']
+	button = buttondict['CDOK']
 	move(button['x'], button['y'], button['z'])
 	move (0,0,1)
+	print "Sleeping"
 	time.sleep(30)
 	return True, persistant_data
 								      
