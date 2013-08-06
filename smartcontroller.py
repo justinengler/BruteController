@@ -11,7 +11,7 @@ import random
 import time
 import re
 import serial
-import pickle
+import json
 import argparse
 
 ideal_positions = ([(163,51),(301,47),(152,428),(305,433)])
@@ -51,25 +51,13 @@ DONE = False
 drag_start=False
 selection = None
 
-cooldown = False
-cooldown_time = 0
-attempts_per_cooldown = 0
-
 button_list = list()
 image = None
 cam = None
-rotation_angle = None
-shear_angle = None
 perspective_xform = None
 orientation = 0
-detector = None
-additional_detectors = list()
-done_cracking = False
-correct_pin = None
+detectors = list()
 increment = 0.1
-display = True
-
-
 
 ser = None
 
@@ -83,6 +71,7 @@ writedelay=.5
 """If True, the input and output to serial are shown on the console"""
 SERIALTOCONSOLE=False
 
+""" Set up the serial connectiong to the arduino """
 def serialsetup(serialport,isreverse):
 	global ser
 	ser = serial.Serial(serialport, 57600, timeout=1)
@@ -92,8 +81,7 @@ def serialsetup(serialport,isreverse):
 	if isreverse:
 		write("RV;")
 
-
-# potentially useful for looking for characters
+""" Filters a group of boxes to only contain those boxes that are 'squarish' """
 def squarish(group, margin):
 	if (group != None):
 		remove_list = []
@@ -107,56 +95,12 @@ def squarish(group, margin):
 	return group
 
 
-# gives the axis-aligned bounding rect and its area for a given contour
+""" gives the axis-aligned bounding rect and its area for a given contour """
 def rectAndArea(contour):
 	rect = cv2.boundingRect(contour)
 	return (rect, rect[2] * rect[3])
 
-# approximate the area by dividing by 1000, used to group contours into roughly similar-size groupings
-def approx_area((rect, area)):
-	MARGIN = 1000
-	return area / MARGIN
-
-# whether rect1 and rect2 are "near" one another, defined by some of their edges being close
-def nearby(rect1, rect2):
-	NEARBY_MARGIN = 30
-
-	dx1 = np.abs(rect1[0] - rect2[0])
-	dx2 = np.abs(dx1 - rect1[2])
-	dx3 = np.abs(dx1 - rect2[2])
-	dx = min((dx1, dx2, dx3))
-
-	dy1 = np.abs(rect1[1] - rect2[1])
-	dy2 = np.abs(dy1 - rect1[3])
-	dy3 = np.abs(dy1 - rect2[3])
-	dy = min((dy1, dy2, dy3))
-
-	return (dx < NEARBY_MARGIN and dy < NEARBY_MARGIN)
-
-# takes a group and removes any members that are not close enough to any other member
-def distant_elimination(group):
-	remove_list = []
-	if (group != None and len(group) > 4):
-		# test if all these potential buttons are near one another
-		localized = False
-		for box in group:
-			for other_box in group:
-				if (box != other_box):
-					if (nearby(box, other_box)):
-						localized = True
-				if (localized):
-					break
-			if (not localized):
-				remove_list.append(box)
-
-		for box in remove_list:
-			group.remove(box)
-
-		return group
-	else:
-		return None
-
-# remove boxes from the group if they are overlapping another box
+""" remove boxes from the group if they are overlapping another box """
 def overlap_elimination(group, margin):
 	if (group != None):
 		remove_list = []
@@ -172,7 +116,7 @@ def overlap_elimination(group, margin):
 
 		return group
 	
-# tests if two given rectangles are too close to one another and should be considered overlapping
+""" tests if two given rectangles are too close to one another and should be considered overlapping """
 def too_close((x1, y1, w1, h1), (x2, y2, w2, h2), margin):
 	dx = np.abs(x1 - x2)
 	dy = np.abs(y1 - y2)
@@ -181,10 +125,8 @@ def too_close((x1, y1, w1, h1), (x2, y2, w2, h2), margin):
 	return (dx + dy + dw + dh) < margin
 
 
-# find contours using the MSER function
+""" find contours using the MSER function """
 def find_contours_MSER(img, minsize, maxsize, find_characters, margins):
-	global display
-	display = False
 	gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
 
 #
@@ -206,35 +148,9 @@ def find_contours_MSER(img, minsize, maxsize, find_characters, margins):
 
 	contours = mser.detect(gray, None)
 	buttons, stats = process_contours(contours, minsize, maxsize, img, "gray -> MSER", find_characters, margins)
-	display = True
 	return buttons
 
-# find contours using the findContours function
-def find_contours_FC(img, minsize, maxsize, find_characters, margins):
-
-	gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-	canny = cv2.Canny(gray, 0, 50)
-
-	block_size = 5
-	param = 1
-
-	thresh = gray
-	erosion_size = 3
-	kernel = cv2.getStructuringElement(cv2.MORPH_ERODE, (erosion_size, erosion_size))
-	thresh = cv2.erode(thresh, kernel)
-
-	thresh = cv2.adaptiveThreshold(thresh, 250, cv2.ADAPTIVE_THRESH_MEAN_C, cv2.THRESH_BINARY, block_size, param)
-
-	show(thresh, "thresh")
-	show(canny, "canny")
-
-	contours, hierarchy = cv2.findContours(canny, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
-
-	buttons, stats = process_contours(contours, minsize, maxsize, img, "Canny -> findContours", find_characters, margins)
-
-	return buttons
-
-# processes a list of contours based on whether it should be looking for buttons or characters
+""" processes a list of contours based on whether it should be looking for buttons or characters """
 def process_contours(contours, minsize, maxsize, img, contour_source, find_characters, (overlap_margin, squarish_margin)):
 	# try to find 9+ boxes with almost exactly the same dimensions
 	boxes = [x[0] for x in map(rectAndArea, filter(lambda cnt: cv2.contourArea(cnt) < maxsize and cv2.contourArea(cnt) > minsize, [r.reshape(-1, 1, 2) for r in contours]))]
@@ -247,20 +163,20 @@ def process_contours(contours, minsize, maxsize, img, contour_source, find_chara
 		
 	return boxes, average_area
 
-
-def virtual_to_robot(point):
-	print "Point:",point
-	print"center:", V_CARD_CENTER        
+""" converts coordinates from a click in the R2B2 window to an X/Y for the robot """
+def virtual_to_robot(point):		
 	x = (point[0] - V_CARD_CENTER[0]) * V2R[0]
 	y = -(point[1] - V_CARD_CENTER[1]) * V2R[1]
 		
 	return x,y
 
+""" tests whether the given point is in the given box """
 def point_in_box(point, box):
 	x,y =point
 	bx,by,bw,bh = box
 	return x>= bx and x <= (bx+bw)and y>=by and y<=(by+bh)
 
+""" callback for manually indicating a landmark """
 def select_landmark(event, x, y, flag, param):
 	frame, landmarks,selected_landmarks  = param
 	in_box = False
@@ -276,15 +192,15 @@ def select_landmark(event, x, y, flag, param):
 			selected_landmarks.append((x,y))
 
 
-
-''' static method, src and dst should be tweaked once the final frame
-is built to get a constant perspective shift, since the camera will
-always be offset by the same amount. Alternatively we can add code for
-a calibration phase that will have a known image reference (let's say
-a card) and then get a perspective shift based on how that card is
-seen in the current setup versus how the reference shows it'''
+""" Attempts to find 4 landmarks in the image and map them to the 4
+landmarks preprogrammed in the "ideal_positions" global variable. This
+mapping is done via a perspective shift, and the shifted image and
+shifting transform matrix are returned. If exactly 4 good landmarks
+cannot be found, or if the 4 that are found are rejected by the user,
+the correct four can be hand picked by the user to create the correct
+perspective transform """
 def perspective_shift(img):
-	global display, ideal_positions
+	global ideal_positions
 	max_area = 2000
 	min_contour_size  = 5
 	max_contour_size = 1000000
@@ -294,15 +210,9 @@ def perspective_shift(img):
 	tries = 0
 	perspective_xform = None
 	shifted_img = img
+
 	
 	while True:
-		# TODO: Adjust the parameters to the find_contours_MSER to try to get 4 landmarks
-#                if len(landmarks) > 4:
- #                       break
-
-  #              elif len(landmarks) < 4:
-   #                     break
-		
 		contour_boxes =  (filter (lambda x: x[2]*x[3] < 2000, overlap_elimination( find_contours_MSER(img, min_contour_size, max_contour_size, True,  margins),100)))
 		landmarks = [(float(x[0] + (x[2]/2)), float(x[1] +(x[3]/2))) for x in contour_boxes]
 
@@ -310,20 +220,8 @@ def perspective_shift(img):
 		for box in contour_boxes:
 			cv2.rectangle(tempimg, (box[0], box[1]), (box[0] + box[2], box[1] + box[3]), (0, 255, 0), 2)
 		cv2.imshow(WINDOW_NAME, tempimg)
-		print "Identified these landmarks (press any key to continue)"
-		cv2.waitKey(2000)
-		
-		# square is in "Z" pattern
-		def in_square(square, points):
-			result = list()
-			for point in points:
-				if (point[0] > square[0][0] and point[1] > square[0][1] and point[0] <square[1][0] and point[1] > square[0][1] and point[0] > square[2][0] and point[1] < square[2][1] and point[0] < square[3][0] and point[1] < square[3][1]):
-					result.append(point)
 
-			return result
-
-	
-
+		print "Identified these landmarks"
 		
 		if len(landmarks) == 4:
 			landmarks = sort_to_square(landmarks)
@@ -343,9 +241,7 @@ def perspective_shift(img):
 						elif ch == ord('n'):
 							break
 					break
-							
-						
-					
+										
 		elif len(landmarks) != 4:
 			if len(landmarks) > 4:
 				print "More than 4 marks found, please select the four calibration marks or press Esc"
@@ -354,20 +250,18 @@ def perspective_shift(img):
 
 			shifted_img, perspective_xform = do_manual_selection(img, contour_boxes)				
 			break
-
-		else:
-			cv2.imshow(WINDOW_NAME, img)
 		
 		tries += 1
-		if (len(landmarks) or 4 and good_transform(shifted_img, ideal_positions)) or (tries >= MAX_TRIES):
+		if len(landmarks) == 4 or (tries >= MAX_TRIES):
 			break
 	
-	print tries
 	if (tries == MAX_TRIES):
 		return img, None
 	else:
 		return (shifted_img, perspective_xform)
 
+""" returns the points sorted to be in a "Z" pattern (low-x low-y,
+high-x low-y, low-x high-y, high-x high-y)"""
 def sort_to_square(points):
 	print points
 	square = list()
@@ -378,8 +272,11 @@ def sort_to_square(points):
 	square.append(max(y_sorted[2:4], key=lambda p: p[0]))
 	print square
 	return square
-			
+
+""" perform a perspective transform on img using the passed square as
+src and ideal_positions as dst"""
 def shift(square, img):
+	global ideal_positions
 	src =np.array(square, np.float32)
 	print(src)
 	dst = np.array(ideal_positions, np.float32 )
@@ -389,6 +286,7 @@ def shift(square, img):
 
 	return shifted_img, xform
 
+""" allows the user to choose landmarks on the img """
 def do_manual_selection(img, contour_boxes):
 	correct_landmarks =list()
 	
@@ -399,50 +297,26 @@ def do_manual_selection(img, contour_boxes):
 
 	landmarks = sort_to_square(correct_landmarks)
 	return shift(landmarks, img)
-	
-def good_transform (img, goal):
-	# TODO: determine exactly how to measure a good transform -
-	# obviously it will have the 4 contours in the right
-	# positions; some way to test if it has no other contours
-	# inside that box perhaps?
-	contour_boxes = overlap_elimination( find_contours_MSER(img, 5, 100000, True, (100, 2)),100)
-	return len(contour_boxes) == 4
-	
 
-''' creates the detector and trains it on features of the img '''
+""" creates the detector data from the img. Right now this is a simple
+sum of pixel values for each row of the img """
 def create_detector(img):
 	global selection
-		
-	surfDetector = cv2.FeatureDetector_create("SURF")
-	surfDescriptorExtractor = cv2.DescriptorExtractor_create("SURF")
-	
+			
 	imgg = cv2.cvtColor(img,cv2.COLOR_BGR2GRAY)
-
 	
 	if (selection != None):
 		imgg = imgg[selection[1]:selection[1]+selection[3], selection[0]:selection[0] +selection[0]]
 
 	hist = [sum(x) for  x in imgg]
 	return hist
-			
-	keypoints = surfDetector.detect(imgg)
-	keypoints, descriptors = surfDescriptorExtractor.compute(imgg,keypoints)
 
-	samples = np.array(descriptors)
-	responses = np.arange(len(keypoints),dtype= np.float32)
-	
-	# kNN training
-	knn = cv2.KNearest()
-	knn.train(samples, responses)
-	return knn
-
-''' returns True if the current image has too many feature mismatches
-compared to the image used to train the detector'''
+""" returns True if there is a change detected. Right now this is a
+simple squared-error of the detector and image, based on summing the
+pixel values for each row of the image. """
 def detect_change(cur_img, mismatch_threshold, detector_to_use):
 	global selection
 	DIST_THRESHOLD = 0.1
-	surfDetector = cv2.FeatureDetector_create("SURF")
-	surfDescriptorExtractor = cv2.DescriptorExtractor_create("SURF")
 
 	cur_imgg = cv2.cvtColor(cur_img,cv2.COLOR_BGR2GRAY)
 	if (selection != None):
@@ -455,25 +329,8 @@ def detect_change(cur_img, mismatch_threshold, detector_to_use):
 		diff += int(hist[i] - detector_to_use[i])* int(hist[i]-detector_to_use[i])	
 	print diff
 	return diff > mismatch_threshold or diff < 0
-	
-	cur_keypoints = surfDetector.detect(cur_imgg)
-	cur_keypoints, cur_descriptors = surfDescriptorExtractor.compute(cur_imgg,cur_keypoints)
 
-	mismatches = 0
-	 
-	if cur_descriptors != None:
-		if (len (cur_descriptors))< mismatch_threshold:
-			return True
-		for h,des in enumerate(cur_descriptors):
-			des = np.asmatrix(des,np.float32)
-			retval, results, neigh_resp, dists = detector_to_use.find_nearest(des,1)
-			res,dist =  int(results[0][0]),dists[0][0]
-
-			if dist > DIST_THRESHOLD:
-				mismatches += 1
-			
-	return mismatches > mismatch_threshold
-
+""" Callback for moving the mouse while in the focus-selection step of calibration """
 def selection_drag(event, x, y, flags, param):
 	global drag_start, selection
 
@@ -493,9 +350,10 @@ def selection_drag(event, x, y, flags, param):
 	    cv2.rectangle(selection_img, (selection[0],selection[1]), (selection[0] + selection[2], selection[1] + selection[3]), (0, 255, 0), 2)
 	    cv2.imshow("R2B2", selection_img)
 
-
+""" Allow the user to select a region to watch for changes rather than
+the entire camera view to reduce false positives"""
 def get_focus_area(frame):
-	global selection, drag_start,detector
+	global selection, drag_start
 	
 	print "Drag to select the area of the image to focus on for changes to avoid false positive unlocks"
 	print "(the box the PIN appears in is recommended)"
@@ -508,9 +366,10 @@ def get_focus_area(frame):
 	while ch != ord('w'):
 		ch =cv2.waitKey(5)
 
-	detector = create_detector      (frame)
+	detectors.append( create_detector(frame))
 	
-
+""" Callback method for when the window is clicked during the
+button-definition step of calibration """
 def on_point_clicked(event, x, y, flag, param):
 	global DROP_Z, CURRENT_POINT
 	imagename, image = param
@@ -525,9 +384,12 @@ def on_point_clicked(event, x, y, flag, param):
 		cv2.imshow(imagename, scratchimage)
 		move(CURRENT_POINT['x'], CURRENT_POINT['y'], CURRENT_POINT['z'])
 	
-		
+""" Lets the user load and save button configurations, print all
+currently defined buttons, and set and goto buttons. This function
+handles the typed commans while clicks are handled by the
+on_point_clicked callback function """
 def calibrate_buttons(keyboardonly=False, ):
-	global cam, detector, increment, writedelay
+	global cam, increment, writedelay
 
 	frame = get_frame()
 	cv2.imshow(WINDOW_NAME, frame)
@@ -575,10 +437,6 @@ def calibrate_buttons(keyboardonly=False, ):
 			CURRENT_POINT['x'] += increment
 			direct_move(CURRENT_POINT['x'], CURRENT_POINT['y'], CURRENT_POINT['z'])
 							
-		elif ch == ord('p'):
-			print "dumping", buttons
-			pickle.dump(buttons, open("buttons.p", 'w'))
-
 		elif str(unichr(ch)) in [str(x) for x in range(10)]:
 			increment = float(str(unichr(ch)))/ 10
 			print "Changing Step-Size to: ", increment
@@ -590,7 +448,9 @@ def calibrate_buttons(keyboardonly=False, ):
 			goto_button(buttons)
 
 		elif get_word(ch, "Read"):
-			buttons = load_config()
+			new_buttons = load_config()
+			if (new_buttons != None):
+				buttons = new_buttons
 
 		elif get_word(ch, "Write"):
 			save_config(buttons)
@@ -608,11 +468,13 @@ def calibrate_buttons(keyboardonly=False, ):
 						
 		ch = cv2.waitKey()
 
-
-	pickle.dump(buttons, open("buttons-auto.p", 'w'))
+	with open('buttons.cfg', 'w')as f:
+		f.write(json.dumps(buttons))
+		f.close()
 				
 	return buttons
 
+""" Move the robot to the specific button, if it exists """
 def goto_button(buttons):
 	global CURRENT_POINT
 
@@ -625,8 +487,8 @@ def goto_button(buttons):
 	else:
 		print "No such button found"
 	
-	
-	
+
+""" Define the named button as the current position of the robot """	
 def set_button(buttons):
 	global CURRENT_POINT
 	
@@ -638,25 +500,35 @@ def set_button(buttons):
 	print "Set %s to %s" %(button_name, newpoint)
 	buttons[button_name] = newpoint
 
+"""  loads a configuration file using json"""
 def load_config():
 	print "Enter the name of the configuration file to read(press 'Return' when finished)"
 	file_name = get_user_word()
-	print "File loaded successfully."
-	return pickle.load(open(file_name, 'r'))
+	with open (file_name, 'r')as f:
+		data = f.read()
+		print "File loaded successfully."
+		f.close()
+		return json.loads(data)
+		
+	return None
 
-
+""" Saves a configuration using json """
 def save_config(buttons):
 	print "Enter the name of the file to write to (press 'Return' when finished)"
 	file_name = get_user_word()
-	pickle.dump(buttons, open(file_name, 'w'))
-
+	with open(file_name, 'w') as f:
+		f.write(json.dumps(buttons))
+		print "Configuration saved successfully"
+		f.close()
+	
+""" Prints all the currently defined buttons and their coordinates in order of the keys """
 def print_config(buttons):
 	sorted_buttons = sorted((i,j) for i,j in buttons.items())	
 	print "BUTTONS DEFINED:"
 	for pair in sorted_buttons:
 		print pair
 	
-
+""" Returns the next sequence of characters entered by the user until 'Return' is typed """
 def get_user_word(terminal_character="\r"):
 	word = ""
 	ch =cv2.waitKey()
@@ -682,7 +554,7 @@ def get_word(character_entered, word):
 		return False
 
 
-
+""" Calibrates the camera for the rest of the run """
 def calibrate_camera(cam):
 	global orientation
 	
@@ -705,22 +577,21 @@ def calibrate_camera(cam):
 			break
 	
 	perspective_xform = None
-	
-	print "Calibrating Camera: Press \"w\" when the camera is in position and the calibration card is placed directly under the robot"
 
+	print "Press 'w' when calibration card is centered. Or press 'Esc' to skip perspective transform"
+	
 	while True:
 		vis = get_frame()
 		
 		cv2.imshow(WINDOW_NAME, vis)
 		ch = 0xFF & cv2.waitKey(5)
 		if ch == 27:
-			cv2.destroyAllWindows()
+			perspective_xform = None
 			break
 		if ch == ord('w'):
 			
 			image = cv2.resize(vis,  (IMG_SIZE, IMG_SIZE), fx=0.0, fy=0.0, interpolation=cv2.INTER_AREA)
 			
-			#detector = create_detector(image)
 			print "Calibrating..."
 			image, perspective_xform = perspective_shift(image)
 
@@ -740,16 +611,17 @@ def calibrate_camera(cam):
 
 	return perspective_xform
 
+""" Sets up the connection to the camera """
 def setup_camera(camnum=0):
 	global cam
 	cam = cv2.VideoCapture(camnum)
 	cam.open(camnum)
 	return cam
 
+""" Gets a frame from the camera and applies the proper transformations to it"""
 def get_frame():
-	global perspective_xform, rotation_angle, shear_angle, orientation, cam, IMG_SIZE
+	global perspective_xform, orientation, cam, IMG_SIZE
 	if (cam == None):
-		#setup_camera()
 		"""This means we're in a non-camera mode.  Return a dummy image"""
 		return cv2.imread(DUMMYIMAGE)
 
@@ -763,18 +635,10 @@ def get_frame():
 	
 	if (perspective_xform != None):
 		frame = cv2.warpPerspective(frame, perspective_xform, (IMG_SIZE, IMG_SIZE))
-	
-	
-	if (rotation_angle != None):
-		rotation_matrix = cv2.getRotationMatrix2D((len(frame[0]) / 2, len(frame) / 2), rotation_angle, 1)
-		frame = cv2.warpAffine(frame, rotation_matrix, (IMG_SIZE,IMG_SIZE), frame, cv2.INTER_LINEAR, cv2.BORDER_TRANSPARENT)
 
-
-	if (shear_angle != None):
-		frame = unshear(frame, shear_angle)
-	
 	return frame                        
 
+"""  """
 def readuntil(file,target):
 	char =''
 	total=''
@@ -794,7 +658,7 @@ def readuntil(file,target):
 	
 	return total
 	
-
+""" Write the output string to the serial port """
 def write(output):
 	global writedelay
 	"""Send output to the robot"""
@@ -806,16 +670,20 @@ def write(output):
 	if SERIALTOCONSOLE:
 		print "--FROMSERIAL:%s"%fromserial
 
+""" Move the robot to the designated coordinates by moving to x,y,z+1, x,y,z, x,y,z+1 """
 def bounce(x,y,z):
 	write("BM X%s Y%s Z%s;"%(x,y,z))
 
+""" Move the robot to the designated coordinates by moving x,y,z+1, x,y,z """
 def move(x,y,z):
 	"""Move to the coordinates given"""
 	write("MV X%s Y%s Z%s;"%(x,y,z))
 
+""" Move the robot to the designated coordinates by moving to x,y,z"""
 def direct_move(x,y,z):
 	write("DM X%s Y%s Z%s;"%(x,y,z))
 
+""" Return all possible combinations of digits of pinlength, in order or shuffled """
 def brutekeys(pinlength, keys="0123456789", randomorder=False):
 	"""
 	Returns a list of all possibilities to try, based on the length of s and buttons given.
@@ -829,7 +697,6 @@ def brutekeys(pinlength, keys="0123456789", randomorder=False):
 	return allpossible
 
 def bruteloop(brutelist, buttondict, maxtries=None, actionlist=(), startpoint = 0, patternmode=False):
-	global cooldown_time, attempts_per_cooldown, cooldown
 	"""Try to push the buttons for each possible PIN in the given list
 		
 		If an actionlist is given, function in second position will be called
@@ -888,9 +755,11 @@ def bruteloop(brutelist, buttondict, maxtries=None, actionlist=(), startpoint = 
 	move(0,0,0)
 
 
-""" Couldn't get the EP command to work with 5 sets of coordinates - too much in one serial send?"""
+""" Send the move instructions to have robot enter the pin passed in.
+If an OK button is defined the robot finishes the sequence by pressing
+it """
 def enterpin(pin, buttondict, patternmode):
-	global writedelay, additional_detectors, correct_pin, detector
+	global writedelay
 	ok_required = True
 	i = 0
 	for number in pin:
@@ -919,30 +788,29 @@ def enterpin(pin, buttondict, patternmode):
 
 	return True
 
+""" Built-in action for detecting if the screen has changed indicating an unlock """
 def change_finder_action(tries, pin, persistant_data, buttondict):
-	global detector, additional_detectors
+	global detectors
 	direct_move(0,0,1)
 	time.sleep(.2)
 	frame = get_frame()
 	threshold = 200000000
-	if detect_change(frame, threshold, detector):
-		change_detected =True
-		for d in additional_detectors:
-			if (not detect_change(frame, threshold, d)):
-			    change_detected =False
-			    break
-		if (change_detected):
-			print "CHANGE DETECTED!"
-			print "Possibly Unlocked"
-			savename ="pin-images/" + str(pin.split()[0]) + ".jpg"
-			print savename
-			cv.SaveImage(savename, cv.fromarray(frame))
-			additional_detectors.append(create_detector(frame))
-			if len (additional_detectors) > 10:
-				additional_detectors.pop(3)
+	for d in detectors:
+		if (not detect_change(frame, threshold, d)):
+		    change_detected =False
+		    break
+	if (change_detected):
+		print "CHANGE DETECTED!"
+		print "Possibly Unlocked"
+		savename ="pin-images/" + str(pin.split()[0]) + ".jpg"
+		print savename
+		cv.SaveImage(savename, cv.fromarray(frame))
+		detectors.append(create_detector(frame))
+		if len (detectors) > 10:
+			detectors.pop(3)
 	return True, persistant_data
 
-				
+""" Let the user set the baseline Z for the robot to jump to during calibration """
 def find_drop():
 	global DROP_Z, increment
 	print "Use 'q' and 'e' to lower the finger until it contacts the device"
@@ -962,7 +830,7 @@ def find_drop():
 	
 
 def main(args):
-	global display, image, cam, shear_angle, rotation_angle, perspective_xform, orientation, detector, IMG_SIZE, writedelay
+	global image, cam, shear_angle, rotation_angle, perspective_xform, orientation, detector, IMG_SIZE, writedelay
 	
 	parser = argparse.ArgumentParser(description='This program controls a brute-forcing robot. Load arguments from a file with @FILENAME', fromfile_prefix_chars='@')
 	parser.add_argument('-l','--loadpositions',help='import a saved positions file')
@@ -982,36 +850,31 @@ def main(args):
 	## show values ##
 	print args
 
-	display = True
-	
 	newreversez=bool(args.reversez)
 
 	# move robot out of the way
 	serialsetup(args.serialdevice, args.reversez)
 	move(0,0,3)
 
-	if not args.keyconfig:
+	if not args.keyconfig and not (args.nodetect and args.loadpositions):			
 		cam = setup_camera(int(args.videonum))
 		perspective_xform = calibrate_camera(cam) 
-		if perspective_xform == None:
-			print "Calibration Failed. Exiting"
-			return 
-		
-	print "Position the device under the robot."
-	print "Press 'w' when this is completed"
-	ch = None
-	while ch != ord('w'):
-		ch = cv2.waitKey()
+				
+		print "Position the device under the robot."
+		print "Press 'w' when this is completed"
+		ch = None
+		while ch != ord('w'):
+			ch = cv2.waitKey()
 
-	get_frame()
-	frame = get_frame()
-	get_focus_area(frame)
+		get_frame()
+		frame = get_frame()
+		get_focus_area(frame)
 
 	cv2.destroyWindow("R2B2")
 	cv2.namedWindow("R2B2", cv2.WINDOW_AUTOSIZE)
 
 	if args.loadpositions is not None:
-		buttons=pickle.load(open(args.loadpositions, 'r'))
+		buttons=json.loads(open(args.loadpositions, 'r').read())
 	else:	
 		centername= "robot" if args.keyconfig else "calibration card"
 		print "Now place device to PIN crack as close to the middle of the %s as possible"%centername
