@@ -51,6 +51,7 @@ DONE = False
 drag_start=False
 selection = None
 
+change_threshold = 2000000
 button_list = list()
 image = None
 cam = None
@@ -244,9 +245,9 @@ def perspective_shift(img):
 										
 		elif len(landmarks) != 4:
 			if len(landmarks) > 4:
-				print "More than 4 marks found, please select the four calibration marks or press Esc"
+				print "More than 4 marks found, please select the four calibration marks or press ESC"
 			else:
-				print "Fewer than 4 marks found, please select the four calibration marks or press Esc"
+				print "Fewer than 4 marks found, please select the four calibration marks or press ESC"
 
 			shifted_img, perspective_xform = do_manual_selection(img, contour_boxes)				
 			break
@@ -578,7 +579,7 @@ def calibrate_camera(cam):
 	
 	perspective_xform = None
 
-	print "Press 'w' when calibration card is centered. Or press 'Esc' to skip perspective transform"
+	print "Press 'w' when calibration card is centered. Or press 'ESC' to skip perspective transform"
 	
 	while True:
 		vis = get_frame()
@@ -790,13 +791,12 @@ def enterpin(pin, buttondict, patternmode):
 
 """ Built-in action for detecting if the screen has changed indicating an unlock """
 def change_finder_action(tries, pin, persistant_data, buttondict):
-	global detectors
+	global detectors, change_threshold
 	direct_move(0,0,1)
 	time.sleep(.2)
 	frame = get_frame()
-	threshold = 200000000
 	for d in detectors:
-		if (not detect_change(frame, threshold, d)):
+		if (not detect_change(frame, change_threshold, d)):
 		    change_detected =False
 		    break
 	if (change_detected):
@@ -828,13 +828,52 @@ def find_drop():
 			increment = float(str(unichr(ch)))/ 10
 		ch =cv2.waitKey()
 	
+def calibrate_robot_alignment():
+	print "Try to align the robot so the Y axis moves along the long edge of the device"
+	print "Swinging along the Y axis"
+	print "Press ESC to begin swinging on X axis"
+	cv2.namedWindow(WINDOW_NAME)
+	positive = False
+	while True:
+		if positive:
+			print "Positive Y"
+			direct_move(0, 2, 0)
+			positive = False
+		else:
+			print "Negative Y"
+			direct_move(0, -2, 0)
+			positive = True
 
+		ch = cv2.waitKey(500)
+		if ch == 27:
+			break
+
+	print "Try to align the X axis to swing along the short edge of the device"
+	print "Swinging along the X axis"
+	print "Press ESC to stop alignment"
+	cv2.namedWindow(WINDOW_NAME)
+	positive = False
+	while True:
+		if positive:
+			print "Positive X"
+			direct_move(2, 0,0)
+			positive = False
+		else:
+			print "Negative X"
+			direct_move(-2, 0, 0)
+			positive = True
+
+		ch = cv2.waitKey(500)
+		if ch == 27:
+			break
+
+	cv2.destroyWindow(WINDOW_NAME)
+	
 def main(args):
-	global image, cam, shear_angle, rotation_angle, perspective_xform, orientation, detector, IMG_SIZE, writedelay
+	global image, cam, shear_angle, rotation_angle, perspective_xform, orientation, detector, IMG_SIZE, writedelay, change_threshold
 	
 	parser = argparse.ArgumentParser(description='This program controls a brute-forcing robot. Load arguments from a file with @FILENAME', fromfile_prefix_chars='@')
 	parser.add_argument('-l','--loadpositions',help='import a saved positions file')
-	parser.add_argument('-r','--resume',help='NI! resume a previous run')
 	parser.add_argument('-s','--serialdevice',help='Serial device (Mac/Linux) or COM port like "COMx" (Windows)', default=DEFAULTSERIALPORT)
 	parser.add_argument('-v','--videonum',help='Video capture device. "0" is the first', default=1)
 	parser.add_argument('-k','--keyconfig', help='Use keyboard configuration, not camera configuration', action="store_true")
@@ -842,9 +881,10 @@ def main(args):
 	parser.add_argument('-f','--pinfile', help='Load brute force attempts from a file')
 	parser.add_argument('-a','--android', help='Android mode.  Waits 30 seconds each 5 guesses, then presses ok', action="store_true")
 	parser.add_argument('-z','--reversez', help='Reverse the Z axis', action="store_true")
-	parser.add_argument('-p','--pattern', help='Do a sliding pattern unlock. --maxlen or --maxtries recommended!.', action="store_true")
-	parser.add_argument('-m','--maxlen',  help='!NI maximum length to try.')
+	parser.add_argument('-p','--pattern', help='Do a sliding pattern unlock. --maxtries recommended!.', action="store_true")
 	parser.add_argument('-t','--maxtries', help='Maximum number of guesses before quit')
+	parser.add_argument('-x','--axis', help="Set up the robot's x/y alignment", action="store_true")
+	parser.add_argument('-d','--detectionthreshold', help="Set the threshold for detecting a change in the display")
 	args = parser.parse_args()
  
 	## show values ##
@@ -852,8 +892,16 @@ def main(args):
 
 	newreversez=bool(args.reversez)
 
-	# move robot out of the way
 	serialsetup(args.serialdevice, args.reversez)
+
+	if args.detectionthreshold:
+		change_threshold = args.detectionthreshold
+
+	if args.axis:
+		calibrate_robot_alignment()		
+
+	
+	# move robot out of the way
 	move(0,0,3)
 
 	if not args.keyconfig and not (args.nodetect and args.loadpositions):			
