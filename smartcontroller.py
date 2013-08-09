@@ -1,15 +1,10 @@
-import threading
 import sys
-import os
 import cv2
 import cv2.cv as cv
 import numpy as np
-import itertools as it
-import pprint
 import itertools
 import random
 import time
-import re
 import serial
 import json
 import argparse
@@ -691,7 +686,7 @@ def brutekeys(pinlength, keys="0123456789", randomorder=False):
 	
 	Yeah, lots of slow list copying here, but who cares, it's dwarfed by the actual guessing.
 	"""
-	allpossible = list(itertools.imap(lambda x: "".join(x),itertools.product(keys, repeat=length)))
+	allpossible = list(itertools.imap(lambda x: "".join(x),itertools.product(keys, repeat=pinlength)))
 	if randomorder:
 		random.shuffle(allpossible)
 
@@ -870,7 +865,7 @@ def calibrate_robot_alignment():
 	cv2.destroyWindow(WINDOW_NAME)
 	
 def main(args):
-	global image, cam, shear_angle, rotation_angle, perspective_xform, orientation, detector, IMG_SIZE, writedelay, change_threshold
+	global image, cam, perspective_xform, orientation,  writedelay, change_threshold
 	
 	parser = argparse.ArgumentParser(description='This program controls a brute-forcing robot. Load arguments from a file with @FILENAME', fromfile_prefix_chars='@')
 	parser.add_argument('-l','--loadpositions',help='import a saved positions file')
