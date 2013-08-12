@@ -1,6 +1,14 @@
 \documentclass[a4paper,12pt]{letter}
 
 \begin{document}
+PREREQUSITES:
+\begin{itemize}
+\item A robot, mounted with the effector pointing towards the device under test
+\item Arduino or compatible microcontroller.
+\item A device to test.
+\item A computer with 2 USB ports
+\item (optional, but highly recommended) an external USB camera.
+\end{itemize}
 
 SETUP:
 \begin{itemize}
@@ -33,7 +41,7 @@ BASIC OPERATION:
 \item c. If you already had a configuration you can type "Read" and the name of the file to read from.
 \item d. When all buttons have been configured simply press the Escape key to begin entering pins.
 \end{itemize}
-\item 9. Each time the camera detects enough of a change it may be an unlock, it saves the image it in the pin-images folder, named with the name of the PIN it had just entered before capturing that image. Due to the unlock delay on some screens this may actually be one or two later in the list than the correct PIN.
+\item 9. Each time the camera detects enough of a change that it may be an unlock, it saves the image of the change in the pin-images folder, named with the name of the PIN it had just entered before capturing that image. Due to the unlock delay on some screens this may actually be one or two later in the list than the correct PIN.
 \end{itemize}
 
 COMMAND-LINE ARGUMENTS:
@@ -43,9 +51,9 @@ COMMAND-LINE ARGUMENTS:
 \item -f, --pinfile <file>: reads the PINs to try, in order, from a file provided by the user
 \item -k, --keyconfig: runs camera-less; buttons are configured using the keyboard only and changes to the device screen are not detected
 \item -l, --loadpositions <file>: loads the positions of buttons from a previously saved configuration specified by the argument. If this and --nodetect are provided then the entire visual configuration section of calibration is skipped
-\item -n, --nodetect: does not attempt to detect changes to the screen that would indicate an unlock. If this and --loadpositions are both provided then all visual configuration isskipped
-\item -p, --pattern: operate in pattern lock mode, so buttons are dragged between instead of just pressed
-\item -s, --serialdevice <port name>: the name of the serial port to connect to (windows typically COM\#) 
+\item -n, --nodetect: does not attempt to detect changes to the screen that would indicate an unlock. If this and --loadpositions are both provided then all visual configuration is skipped
+\item -p, --pattern: operate in pattern lock mode, so buttons are dragged between instead of pressed
+\item -s, --serialdevice <port name>: the name of the serial port to connect to (windows typically COM\#, Linux and OSX are usually /dev/tty* devices) 
 \item -t, --maxtries <number>: only tries up to maxtries number of PINs
 \item -v, --videonum <number>: the slot the webcam occupies (typically 0 or 1)
 \item -x, --axis: run an axis-alignment check to start with to allow the user to match up the vertical and horizontal axes of the robot and the device
@@ -54,18 +62,22 @@ COMMAND-LINE ARGUMENTS:
 
 COMMON PROBLEMS
 \begin{itemize}
+\item \emph{P:} On the very first run of the program, I get a serial error or timeout.
+\emph{S:} You need to select the serial port your Arduino's USB virtual serial port is connected to on your computer. If you're unsure, see what serial port is reported by the Arduino programming software. Use the --serialdevice parameter to set the correct serial port.
+\item \emph{P:} My camera shows a picture of me instead of the robot.
+\emph{S:} You need a camera pointing at the device you're testing, and the shot shouldn't include much else that moves around (such as the robot's effector).  We found an external camera to be the most effective.  If your external camera is connected, but smartcontroller isn't using the correct camera, try the --videonum command line parameter.
 \item \emph{P:} My robot is touching the button but the button is not being pressed.
-\emph{S:} The stylus tip may not be properly grounded. Just grounding to one of the metal rods on the robot will not work.
+\emph{S:} The stylus tip may not be properly grounded. Just grounding to one of the metal rods on the robot will not work. Connect the stylus tip to a ground pin on the Arduino for best results.
 \item \emph{P:} My device shifts over time and so I cannot bruteforce it.
 \emph{S:} Multiple solutions: 
 \begin{itemize}
-\item Strap your device in. Glue, tap, zip-ties can all work to secure it in place. 
+\item Strap your device in. Glue, tape, or zip-ties can all work to secure it in place. For our demos, we used pegboard and zipties for a solid, but non-permanent solution.
 \item Lighter touch. Reconfigure your buttons to have the highest possible Z coordinate while still triggering the button.
 \item Strap your robot in. Securing the robot will help prevent it shifting during operation and gradually accumulating error until it misses buttons.
 \end{itemize}
 \item \emph{P:} My robot punches the ground at the start of the program.
 \emph{S:} Your servos probably rotate the opposite way of "normal". Pass the "-z" argument to compensate.
 \item \emph{P:} My program detects locked screens too much/doesn't detect the unlocked screen
-\emph{S:} Try adjusting the threshold by passing different values to the "-d" argument. Also try changing the "region of interest" selected in calibration. If it is too small it may be less likely to detect the unlock, if it is too large it might detect too many false positives.
+\emph{S:} Try adjusting the threshold by passing different values to the "-d" argument. Also try changing the "region of interest" selected in calibration. If it is too small it may be less likely to detect the unlock, if it is too large it might detect too many false positives.  Movement around the device during testing can also disrupt the detection, as even changes in shadows can result in a false positive.
 \end{itemize}
 \end{document}
