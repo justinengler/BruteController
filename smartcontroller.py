@@ -1,3 +1,24 @@
+##
+#
+# smartcontroller.py:  Controller for R2B2 and similar PIN-cracking robots
+# Copyright 2013 iSEC Partners
+# Justin Engler and Paul Vines
+#
+#   This program is free software: you can redistribute it and/or modify
+#   it under the terms of the GNU General Public License as published by
+#   the Free Software Foundation, either version 3 of the License, or
+#   (at your option) any later version.
+#
+#   This program is distributed in the hope that it will be useful,
+#   but WITHOUT ANY WARRANTY; without even the implied warranty of
+#   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#   GNU General Public License for more details.
+#
+#   You should have received a copy of the GNU General Public License
+#   along with this program.  If not, see <http://www.gnu.org/licenses
+#
+##
+
 import sys
 import cv2
 import cv2.cv as cv
@@ -10,13 +31,11 @@ import json
 import argparse
 
 ideal_positions = ([(163,51),(301,47),(152,428),(305,433)])
-#ideal_positions = ([(210,41),(423,41),(214,600),(423, 600)])
 
 V_CARD_WIDTH= ideal_positions[1][0] - ideal_positions[0][0]
 V_CARD_HEIGHT = ideal_positions[2][1] - ideal_positions[0][1]
 V_CARD_CENTER = (ideal_positions[0][0] + (V_CARD_WIDTH/2), ideal_positions[0][1] + (V_CARD_HEIGHT/2))
 
-#real_positions = [(-2.3, 4.7, -2.2), (1.5,3., -2.1), (-2.3,-2.8,-1.8),(1.5,-2.8,-1.8)]
 real_positions =[(-2.34,3.74,-2.5),(1.16,3.74,-2.3),(-2.34,-3.56,-2.4),(1.16,-3.26,-2.2)]
 REAL_CARD_WIDTH = abs(real_positions[0][0] - real_positions[1][0])#3.6
 REAL_CARD_HEIGHT = abs(real_positions[0][1] - real_positions[3][1]) #7.5
@@ -948,6 +967,7 @@ def main(args):
 		actionlist.append((1, change_finder_action))
 
 	if (args.pattern):
+		#Our test device threatened to ask for a google password after 20 incorrect patterns.
 		actionlist.append((19, stop))
 		writedelay = 0.5
 	else:
